@@ -56,10 +56,10 @@ public:
         : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0)
     {
     }
-    Transducer(FILE* f)
+    Transducer(FILE* f, CharType field_separator = '\t')
         : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0) 
     {
-        Read(f); 
+        Read(f, field_separator);
     }
     void Read(FILE* f, CharType field_separator = '\t')
     {
@@ -121,7 +121,8 @@ public:
                 break;
             case 1:
                 to = std::numeric_limits<Index>::max();
-                std::basic_istringstream<CharType>(line.substr(pos)) >> weight;
+                ReadFloat(line.data() + pos, weight);
+                // std::basic_istringstream<CharType>(line.substr(pos)) >> weight;
                 input.clear();
                 output.clear();
                 break;
@@ -130,7 +131,8 @@ public:
                 weight = 0;
                 break;
             case 4:
-                std::basic_istringstream<CharType>(line.substr(pos)) >> weight;
+                ReadFloat(line.data() + pos, weight);
+                // std::basic_istringstream<CharType>(line.substr(pos)) >> weight;
                 break;
             default:
                 throw Error("AT&T text file at line ", n_transitions + 1, " has wrong number of columns!");
@@ -138,13 +140,16 @@ public:
             
             if (previous_state != from)
             {
-                state_pointers[from][0] = (Index)transitions_table.size();
+                if (state_pointers.find(from) != state_pointers.end())
+                    // this state has already been visited
+                    throw Error("Transitions are not ordered by starting state! Starting state of transition ", n_transitions + 1, " has already been visited.");
+                state_pointers[from][0] = Index(transitions_table.size());
                 state_pointers[previous_state][1] = state_pointers[from][0];
                 previous_state = from;
             }
 
             //! write the binary format (pre-compile)
-            transitions_table.emplace_back((Index)n_transitions);
+            transitions_table.emplace_back(Index(n_transitions));
             transitions_table.emplace_back(from); // this will be to_start
             transitions_table.emplace_back(to); // this will be to_end
             transitions_table.emplace_back();

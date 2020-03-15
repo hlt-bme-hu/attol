@@ -4,6 +4,7 @@
 
 #include "ArgParser.h"
 #include "attol/Transducer.h"
+#include "attol/char.h"
 
 #ifdef WIN32
 # include <io.h>
@@ -25,19 +26,27 @@ void SetBinary()
 
 template<attol::Encoding enc, attol::FlagStrategy strategy>
 void do_main(std::string transducer_filename, FILE* input, FILE* output,
-    size_t max_results, size_t max_depth, double max_time, int )
+    size_t max_results, size_t max_depth, double max_time, int print, bool bom, size_t fs)
 {
     typedef attol::Transducer<enc> Transducer;
     typedef typename Transducer::CharType CharType;
+
     FILE* f = fopen(transducer_filename.c_str(), "rb");
     if (!f)
         throw attol::Error("Cannot open \"", transducer_filename, "\"!");
-    Transducer t(f);
+    if (bom && !attol::CheckBom<enc>(f))
+        throw attol::Error("File \"", transducer_filename, "\" with encoding ", int(enc), " does not match BOM!");
+    Transducer t(f, CharType(fs));
     fclose(f);
 
     std::cerr << "Transducer states: " << t.GetNumberOfStates() <<
-        "\ntransitions: " << t.GetNumberOfTransitions() <<
-        "\nmemory: " << t.GetAllocatedMemory() << "bytes" << std::endl;
+        "\nTransitions: " << t.GetNumberOfTransitions() <<
+        "\nMemory: " << t.GetAllocatedMemory() << "bytes" << std::endl;
+
+    if (bom && !attol::CheckBom<enc>(input))
+        throw attol::Error("Input file with encoding ", int(enc), " does not match BOM!");
+    if (bom && !attol::WriteBom<enc>(output))
+        throw attol::Error("Cannot write BOM to output with encoding", int(enc), "!");
 
     t.max_depth = max_depth;
     t.max_results = max_results;
@@ -87,6 +96,9 @@ int main(int argc, const char** argv)
     double time_limit = 0.0;
     size_t max_depth = 0, max_results = 0;
     int print = 1, encoding = attol::UTF8;
+    bool bom = false;
+    size_t field_separator = '\t';
+
     int flag_strategy = attol::OBEY;
     {
         arg::Parser<> parser("AT&T Optimized Lookup\n"
@@ -111,6 +123,12 @@ int main(int argc, const char** argv)
                         "maximum depth to go down during lookup\n"
                         "unlimited if set to 0");
         
+        parser.AddArg(field_separator, { "-fs", "--fs", "--tab", "-ts", "--ts" },
+            "field separator, character between columns of transducer file\n"
+            "It has to be 1 code-unit wide, meaning that in UTF8 and UTF16 you cannot use characters above "
+            "U+007F and U+D7FF respectively.",
+            "unicode decimal");
+
         parser.AddArg(flag_strategy, { "-f", "--flag" }, 
             attol::ToStr("how to treat the flag diacritics\n",
                 attol::IGNORE, ": ignore (off)\n",
@@ -129,12 +147,19 @@ int main(int argc, const char** argv)
         parser.AddArg(encoding, { "-e", "--enc", "--encoding" },
             attol::ToStr("encoding of the transducer and also the input/output\n",
                 attol::ASCII, ": ASCII\n",
-                attol::CP, ": fixed one byte characters, use this for any ISO-8859 character table (same as ASCII.)\n",
-                attol::UTF8, ": UTF8\n",
-                attol::UCS2, ": UCS2,\tendianness depends on your CPU\n",
-                attol::UTF16, ": UTF16,\tendianness depends on your CPU\n",
-                attol::UTF32, ": UTF32,\tendianness depends on your CPU"),
-            "", std::vector<int>({ attol::ASCII, attol::CP, attol::UTF8, attol::UCS2, attol::UTF16 }));
+                attol::CP, ": OCTET\tfixed 1 byte\n"
+                                "\t\tuse this for any of the extended ASCII character tables\n",
+                                "\t\tfor example ISO-8859 encodings\n",
+                                "\t\t(actually it's the same as ASCII)\n",
+                attol::UTF8, ": UTF-8\tsame as the above two with two notable differences:\n",
+                                "\t\tBOM may be used\n",
+                                "\t\tOne character is calculated according to continuation bytes\n",
+                attol::UCS2, ": UCS-2\tendianness depends on your CPU\n",
+                attol::UTF16, ": UTF16\tendianness depends on your CPU\n",
+                attol::UTF32, ": UTF32\tendianness depends on your CPU"),
+            "", std::vector<int>({ attol::ASCII, attol::CP, attol::UTF8, attol::UCS2, attol::UTF16, attol::UTF32 }));
+
+        parser.AddFlag(bom, { "-bom", "-BOM", "--bom", "--BOM" }, "Use Byte Order Mark in front of all input/output and transducer file.");
 
         parser.Do(argc, argv);
     }
@@ -168,9 +193,9 @@ try{
         case attol::UCS2:
             mainf = do_main<attol::UCS2,    attol::NEGATIVE>;
             break;
-        //case attol::UTF32:
-        //    mainf = do_main<attol::UTF32,   attol::NEGATIVE>;
-        //    break;
+        case attol::UTF32:
+            mainf = do_main<attol::UTF32,   attol::NEGATIVE>;
+            break;
         default:
             mainf = do_main<attol::UTF8,    attol::NEGATIVE>;
             break;
@@ -190,9 +215,9 @@ try{
         case attol::UCS2:
             mainf = do_main<attol::UCS2,    attol::IGNORE>;
             break;
-        //case attol::UTF32:
-        //    mainf = do_main<attol::UTF32,   attol::IGNORE>;
-        //    break;
+        case attol::UTF32:
+            mainf = do_main<attol::UTF32,   attol::IGNORE>;
+            break;
         default:
             mainf = do_main<attol::UTF8,    attol::IGNORE>;
             break;
@@ -212,15 +237,17 @@ try{
         case attol::UCS2:
             mainf = do_main<attol::UCS2,    attol::OBEY>;
             break;
-        //case attol::UTF32:
-        //    mainf = do_main<attol::UTF32,   attol::OBEY>;
-        //    break;
+        case attol::UTF32:
+            mainf = do_main<attol::UTF32,   attol::OBEY>;
+            break;
         default:
             mainf = do_main<attol::UTF8,    attol::OBEY>;
             break;
         } break;
     }
-    mainf(transducer_filename, input, output, max_results, max_depth, time_limit, print);
+    mainf(transducer_filename, input, output,
+            max_results, max_depth, time_limit,
+            print, bom, field_separator);
     return 0;
 }
 catch (const std::exception& e)

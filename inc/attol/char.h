@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <cstddef>
 #include <type_traits>
 #include <vector>
+#include <array>
 #include <string>
 
 #include "attol/Utils.h"
@@ -68,25 +68,37 @@ struct CodeUnit<Encoding::UTF32>
 };
 
 template<Encoding e>
-const typename CodeUnit<e>::type*& StepNextCharacter(const typename CodeUnit<e>::type*& word)
+const typename CodeUnit<e>::type*& StepNextCharacter(const typename CodeUnit<e>::type*& word)noexcept
 {
-    return ++word;
+    typedef typename CodeUnit<e>::type CharType;
+    switch (e)
+    {
+    case Encoding::UTF8:
+        // step over continuation bytes
+        do
+        {
+            ++word;
+        } while (((*word) & CharType(0xC0)) == CharType(0x80));
+        return word;
+    case Encoding::UTF16:
+        if (((*word) & CharType(0xFC00)) == CharType(0xD800))
+            word += 2;
+        else
+            ++word;
+        return word;
+    default:
+        return ++word;
+    }
 }
 
-template<>
-const typename CodeUnit<Encoding::UTF8>::type*& StepNextCharacter<Encoding::UTF8>(const typename CodeUnit<Encoding::UTF8>::type*& word);
-
-template<>
-const typename CodeUnit<Encoding::UTF16>::type*& StepNextCharacter<Encoding::UTF16>(const typename CodeUnit<Encoding::UTF16>::type*& word);
-
 template<Encoding e>
-const typename CodeUnit<e>::type* GetNextCharacter(const typename CodeUnit<e>::type* word)
+const typename CodeUnit<e>::type* GetNextCharacter(const typename CodeUnit<e>::type* word) noexcept
 {
     return StepNextCharacter<e>(word);
 }
 
 template<class CharType, class StorageType>
-bool StrEnds(StorageType word)
+bool StrEnds(StorageType word) noexcept
 {
     static_assert(sizeof(StorageType) % sizeof(CharType) == 0, "Size of StorageType should be a multiple of CharType!");
     for (size_t i = 0; i < sizeof(StorageType) / sizeof(CharType); ++i)
@@ -98,30 +110,30 @@ bool StrEnds(StorageType word)
 }
 
 template<Encoding e, class StorageType>
-bool StrEnds(StorageType word)
+bool StrEnds(StorageType word)noexcept
 {
     return StrEnds<typename CodeUnit<e>::type>(word);
 }
 
 template<class CharType1, class CharType2>
-bool StrEqual(const CharType1* word1, const CharType2* word2)
+bool StrEqual(const CharType1* word1, const CharType2* word2) noexcept
 {
-    while (*word1 == *word2 && *word1 != (CharType1)0)
+    while (*word1 == *word2 && *word1 != CharType1(0))
     {
         ++word1;
         ++word2;
     }
-    return *word1 == (CharType1)0 && *word2 == (CharType2)0;
+    return *word1 == CharType1(0) && *word2 == CharType2(0);
 }
 
 template<Encoding e>
-bool StrEqual(const typename CodeUnit<e>::type* word1, const typename CodeUnit<e>::type* word2)
+bool StrEqual(const typename CodeUnit<e>::type* word1, const typename CodeUnit<e>::type* word2) noexcept
 {
     return StrEqual<typename CodeUnit<e>::type, typename CodeUnit<e>::type>(word1, word2);
 }
 
 template<class CharType>
-const CharType* StrPrefix(const CharType* word, const CharType* prefix)
+const CharType* StrPrefix(const CharType* word, const CharType* prefix) noexcept
 {
     static_assert(std::is_integral<CharType>::value, "");
     while (*word == *prefix && *word != (CharType)0)
@@ -133,7 +145,7 @@ const CharType* StrPrefix(const CharType* word, const CharType* prefix)
 }
 
 template<Encoding e>
-const typename CodeUnit<e>::type* StrPrefix(const typename CodeUnit<e>::type* word, const typename CodeUnit<e>::type* prefix)
+const typename CodeUnit<e>::type* StrPrefix(const typename CodeUnit<e>::type* word, const typename CodeUnit<e>::type* prefix) noexcept
 {
     return StrPrefix<typename CodeUnit<e>::type>(word, prefix);
 }
@@ -153,14 +165,6 @@ static void CopyStr(const String& str, std::vector<StorageType>& v)
     }
 }
 
-union Endianness
-{
-    unsigned char bytes[4];
-    std::uint32_t uint;
-};
-
-static const Endianness endianness = { '\x01','\x02', '\x03', '\x04' };
-
 template<class TargetType, class SourceType >
 std::basic_string<TargetType> Convert(const SourceType* s)
 {
@@ -169,42 +173,60 @@ std::basic_string<TargetType> Convert(const SourceType* s)
     return result;
 }
 
-template<class CharType, class SourceType >
-std::basic_string<CharType> Convert(const CharType* s)
+template<class CharType, class ResultType>
+void ReadFloat(const CharType* s, ResultType& x)
 {
-    return std::basic_string<CharType>(s);
+    const std::string ascii = Convert<char>(s);
+    std::sscanf(ascii.c_str(), std::is_same<ResultType, double>::value ? "%lf" : "%f", &x);
 }
 
-template<class CharType=char>
-struct StrHash
+template<class CharType, class FloatType>
+std::basic_string<CharType> WriteFloat(FloatType&& x)
 {
-private:
-    struct FNV
-    {
-        static const size_t offset = ((sizeof(size_t) == 8) ? 14695981039346656037ULL : 2166136261U);
-        static const size_t prime = ((sizeof(size_t) == 8) ? 1099511628211ULL : 16777619U);
-    };
-public:
-    size_t operator()(const CharType* p)const
-    {
-        size_t result(FNV::offset);
-        for (; *p; ++p)
-        {
-            result ^= (size_t)(*p);
-            result *= FNV::prime;
-        }
-        return result;
-    }
+    static char result[32];
+    std::snprintf(result, 32, "%g", x);
+    return Convert<CharType>(result);
+}
+
+template<class CharType, class Index>
+std::basic_string<CharType> WriteIndex(Index&& x)
+{
+    static char result[32];
+    std::snprintf(result, 32, "%llu", static_cast<unsigned long long>(x));
+    return Convert<CharType>(result);
+}
+
+template<Encoding e>
+union BOM
+{
+    const std::array<char, sizeof(typename CodeUnit<e>::type)> bytes;
+    const typename CodeUnit<e>::type value;
+    BOM() : value((typename CodeUnit<e>::type)(0xFEFF)){}
 };
 
-template<class CharType = char>
-struct StrEqualType
+template<> union BOM<Encoding::UTF8>
 {
-    bool operator()(const CharType* a, const CharType* b)const
-    {
-        return StrEqual<CharType, CharType>(a, b);
-    }
+    const std::array<char, 3> bytes;
+    BOM() : bytes({ char(0xEF), char(0xBB), char(0xBF) }) {};
 };
+
+template<Encoding e>
+bool CheckBom(FILE* input) noexcept
+{
+    static const BOM<e> bom_standard;
+    BOM<e> bom_actual;
+    return (sizeof(bom_standard) == 1) ||
+        (fread((void*)bom_actual.bytes.data(), 1, sizeof(BOM<e>), input) == sizeof(BOM<e>) &&
+        bom_actual.bytes == bom_standard.bytes);
+}
+
+template<Encoding e>
+bool WriteBom(FILE* output) noexcept
+{
+    static const BOM<e> bom_standard;
+    return (sizeof(BOM<e>) == 1) ||
+        (fwrite(bom_standard.bytes.data(), 1, sizeof(BOM<e>), output) == sizeof(BOM<e>));
+}
 
 }
 
