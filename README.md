@@ -104,15 +104,16 @@ The tool is able to operate in the following modes:
  - UTF-16
  - UTF-32, fixed 4 byte characters
 
-You can choose optional BOM for multi-byte encodings (USC-2, UTF-16 and UTF-32)
+You can choose optional BOM for multi-byte encodings (UTF-8, USC-2, UTF-16 and UTF-32)
  - Mind that endianness won't be converted in those cases
- - Meaning that file endianness (for example UTF16-LE or ETF16-BE) should match CPU endianness
+ - Meaning that file endianness (for example UTF16-LE or UTF16-BE) should match CPU endianness
    - UTF16-LE is the Windows native
  - Although, endianness is checked if BOM is available.
- - It is advised to use BOM for these encodings
+ - It is advised to use BOM for USC-2, UTF-16 and UTF-32 encodings
+ - BOM does nothing for ASCII and OCTET formats.
+ 
+If you have a transducer file in any of the above formats, then you can read and write similarly encoded inputs and outputs. For example:
 
-If you have a transducer file in any of the above formats, then you can read and produce similarly encoded inputs and outputs this way:
-
-    attol -e [0-5] [-bom] transducer.txt -i input.txt -o output.txt
+    attol --enc 4 --bom transducer.txt -i input.txt -o output.txt
 ## EOL
 Windows `\r\n` end-of-line is handled during read, but output is always in Linux `\n` format.
