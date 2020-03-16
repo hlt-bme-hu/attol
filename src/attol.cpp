@@ -63,10 +63,10 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output,
         word.clear();
         while (fread(&c, sizeof(c), 1, input) == 1 && c != '\n')
         {
-            if (c == '\r')
-                continue;
             word.push_back(c);
         }
+        if (!word.empty() && word.back() == '\r')
+            word.pop_back();
         printf.Reset();
         t.template Lookup<strategy>(word.c_str());
         if (!printf.Succeeded())

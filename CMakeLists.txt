@@ -11,8 +11,12 @@ endif()
 
 include_directories("${PROJECT_SOURCE_DIR}/inc")
 
-file( GLOB SOURCES "${PROJECT_SOURCE_DIR}/inc/*.h"
-                   "${PROJECT_SOURCE_DIR}/inc/attol/*.h"
-                   "${PROJECT_SOURCE_DIR}/src/*.cpp")
+file( GLOB HEADER_FILES "${PROJECT_SOURCE_DIR}/inc/attol/*.h")
 
-add_executable(attol "${SOURCES}")
+add_executable(attol "${HEADER_FILES}"
+    "${PROJECT_SOURCE_DIR}/inc/ArgParser.h"
+    "${PROJECT_SOURCE_DIR}/src/attol.cpp")
+
+add_executable(matrix "${HEADER_FILES}"
+    "${PROJECT_SOURCE_DIR}/inc/ArgParser.h"
+    "${PROJECT_SOURCE_DIR}/src/matrix.cpp")

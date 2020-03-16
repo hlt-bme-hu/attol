@@ -3,4 +3,10 @@
 *.h text
 *.hpp text
 
+CMakeLists.txt text
+LICENSE text
+README.md   text
+
+*.sh text eol=lf
+
 data/*.* binary

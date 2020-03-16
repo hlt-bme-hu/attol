@@ -232,7 +232,7 @@ public:
     double time_limit;
     ResultHandler resulthandler;
 
-    template<FlagStrategy strategy>
+    template<FlagStrategy strategy = FlagStrategy::OBEY>
     void Lookup(const CharType* s)const
     {
         lookup<strategy>(nullptr, 0, 0);
