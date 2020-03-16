@@ -139,7 +139,7 @@ int main(int argc, const char** argv)
                 7, ": input segmented with weights\n",
                 8, ": input segmented but flag diacritics removed\n",
                 9, ": input segmented with weights but flag diacritics removed\n",
-                "If the print argument is none of the above, then a questionmark will be printed for every input word."));
+                "If the print argument is none of the above, then a question mark will be printed for every input word."));
   
         parser.AddArg(encoding, { "-e", "--enc", "--encoding" },
             attol::ToStr("encoding of the transducer and also the input/output\n",
