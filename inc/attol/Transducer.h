@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <array>
 #include <tuple>
@@ -34,30 +35,55 @@ private:
     std::vector<Index> transitions_table;
     ToPointers start_state;
     size_t n_transitions, n_states;
-
-    FlagDiacritics<CharType, typename std::make_signed<Index>::type> fd_table;
-    typedef typename decltype(fd_table)::State FlagState;
+public:
+    typedef FlagDiacritics<CharType, typename std::make_signed<Index>::type> FlagDiacriticsType;
+    typedef typename FlagDiacriticsType::State FlagState;
     typedef std::basic_string<CharType> string;
+private:
+    FlagDiacriticsType fd_table;
 public:
     struct PathValue : protected std::tuple<const CharType*, const CharType*, Index, Float, FlagState>
     {
+        typedef std::tuple<const CharType*, const CharType*, Index, Float, FlagState> TupleType;
         PathValue(const CharType* input, const CharType* output, Index id, Float weight, FlagState flag)
-            : std::tuple<const CharType*, const CharType*, Index, Float, FlagState >(input, output, id, weight, flag)
+            : TupleType(input, output, id, weight, flag)
+        {}
+        PathValue(RecordIterator<const Index, const CharType>& it, FlagState flag)
+            : TupleType(it.GetInput(), it.GetOutput(), it.GetId(), it.GetWeight(), flag)
         {}
         const CharType* GetInput()const { return std::get<0>(*this); }
         const CharType* GetOutput()const { return std::get<1>(*this); }
         const Index& GetId()const { return std::get<2>(*this); }
         const Float& GetWeight()const { return std::get<3>(*this); }
         const FlagState& GetFlag()const { return std::get<4>(*this); }
+        //! retrieves output string, but the special symbols and flag diacritics are resolved
+        /*!
+            unfortunately, if UNKNOWN_SYMBOL is on the output tape then there is not much I can do.
+        */
+        const CharType* InterpretOutput()const
+        {
+            static CharType buffer[5]; // should be plenty for all encodings
+            const auto output = GetOutput();
+            if (FlagDiacriticsType::IsIt(output))
+                return output - 1; // it will be the end of input, which will be NULL
+            else if (StrEqual(output, "@_IDENTITY_SYMBOL_@"))
+            {
+                std::memset(buffer, 0, sizeof(buffer));
+                std::memcpy(buffer, GetInput(), (const char*)GetNextCharacter<enc>(GetInput()) - (const char*)GetInput());
+                return buffer;
+            }
+            else
+                return output;
+        }
     };
     typedef std::vector<PathValue> Path;
 
     Transducer()
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0)
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler([](const Path&) {})
     {
     }
     Transducer(FILE* f, CharType field_separator = '\t')
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0) 
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler([](const Path&) {})
     {
         Read(f, field_separator);
     }
@@ -122,7 +148,6 @@ public:
             case 1:
                 to = std::numeric_limits<Index>::max();
                 ReadFloat(line.data() + pos, weight);
-                // std::basic_istringstream<CharType>(line.substr(pos)) >> weight;
                 input.clear();
                 output.clear();
                 break;
@@ -132,7 +157,6 @@ public:
                 break;
             case 4:
                 ReadFloat(line.data() + pos, weight);
-                // std::basic_istringstream<CharType>(line.substr(pos)) >> weight;
                 break;
             default:
                 throw Error("AT&T text file at line ", n_transitions + 1, " has wrong number of columns!");
@@ -169,9 +193,8 @@ public:
 
             ++n_transitions;
         }
-        
-        n_states = state_pointers.size();
         state_pointers[previous_state][1] = SaturateCast<Index>::Do(transitions_table.size());
+        n_states = state_pointers.size();
         }
         fd_table.CalculateOffsets();
 
@@ -250,25 +273,25 @@ private:
         {
             return;
         }
-        for (CRecordIterator<Index, CharType> i(transitions_table.data() + beg); i < transitions_table.data() + end; ++i)
+        const auto flag_state = path.empty() ? FlagState() : path.back().GetFlag();
+        for (RecordIterator<const Index, const CharType> i(transitions_table.data() + beg); i < transitions_table.data() + end; ++i)
         {   // try outgoing edges
             const auto input = i.GetInput();
-            auto current_flag_state = path.empty() ? FlagState() : path.back().GetFlag();
-
+            
             if (i.GetTo() == std::numeric_limits<Index>::max())
             {   //final state
                 if (*s == 0 && (strategy != NEGATIVE || flag_failed))
                 {   // that's a result
                     ++n_results;
-                    path.emplace_back(input, i.GetOutput(), i.GetId(), i.GetWeight(), current_flag_state);
+                    path.emplace_back(i, flag_state);
                     resulthandler(path);
                     path.pop_back();
                 }
             }
-            else if (StrEqual(input, "@_IDENTITY_SYMBOL_@") || StrEqual(input, "@_UNKNOWN_SYMBOL_@"))
-            {   // consume one character
+            else if (*s != 0 && (StrEqual(input, "@_IDENTITY_SYMBOL_@") || StrEqual(input, "@_UNKNOWN_SYMBOL_@")))
+            {   // consume one character, is s is empty, then there is nothing to consume
                 // TODO this can be hastened if the special symbols are shorter!
-                path.emplace_back(input, i.GetOutput(), i.GetId(), i.GetWeight(), current_flag_state);
+                path.emplace_back(s, i.GetOutput(), i.GetId(), i.GetWeight(), flag_state);
                 lookup<strategy>(GetNextCharacter<enc>(s), i.GetFrom(), i.GetTo());
                 path.pop_back();
             }
@@ -279,15 +302,16 @@ private:
             {   // flag diacritic
                 if (strategy == IGNORE)
                 {   // go with it, no matter what
-                    path.emplace_back(i.GetOutput(), i.GetOutput(), i.GetId(), i.GetWeight(), current_flag_state);
+                    path.emplace_back(i.GetOutput(), i.GetOutput(), i.GetId(), i.GetWeight(), flag_state);
                     lookup<strategy>(s, i.GetFrom(), i.GetTo());
                     path.pop_back();
                 }
                 else
                 {
-                    if (fd_table.Apply(input, current_flag_state))
+                    auto new_flag_state = flag_state;
+                    if (fd_table.Apply(input, new_flag_state))
                     {
-                        path.emplace_back(i.GetOutput(), i.GetOutput(), i.GetId(), i.GetWeight(), current_flag_state);
+                        path.emplace_back(i.GetOutput(), i.GetOutput(), i.GetId(), i.GetWeight(), new_flag_state);
                         lookup<strategy>(s, i.GetFrom(), i.GetTo());
                         path.pop_back();
                     }
@@ -295,7 +319,7 @@ private:
                     {
                         const bool previous_fail = flag_failed;
                         flag_failed = true;
-                        path.emplace_back(i.GetOutput(), i.GetOutput(), i.GetId(), i.GetWeight(), current_flag_state);
+                        path.emplace_back(i.GetOutput(), i.GetOutput(), i.GetId(), i.GetWeight(), new_flag_state);
                         lookup<strategy>(s, i.GetFrom(), i.GetTo());
                         path.pop_back();
                         flag_failed = previous_fail;
@@ -304,7 +328,7 @@ private:
             }
             else if (const CharType* next = StrPrefix<enc>(s, input))
             {   // a lead to follow
-                path.emplace_back(input, i.GetOutput(), i.GetId(), i.GetWeight(), current_flag_state);
+                path.emplace_back(i, flag_state);
                 lookup<strategy>(next, i.GetFrom(), i.GetTo());
                 path.pop_back();
             }

@@ -5,6 +5,7 @@
 #include "ArgParser.h"
 #include "attol/Transducer.h"
 #include "attol/char.h"
+#include "attol/Print.h"
 
 #ifdef WIN32
 # include <io.h>
@@ -28,7 +29,7 @@ template<attol::Encoding enc, attol::FlagStrategy strategy>
 void do_main(std::string transducer_filename, FILE* input, FILE* output,
     size_t max_results, size_t max_depth, double max_time, int print, bool bom, size_t fs)
 {
-    typedef attol::Transducer<enc> Transducer;
+    typedef attol::Transducer<enc, 32> Transducer;
     typedef typename Transducer::CharType CharType;
 
     FILE* f = fopen(transducer_filename.c_str(), "rb");
@@ -41,7 +42,7 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output,
 
     std::cerr << "Transducer states: " << t.GetNumberOfStates() <<
         "\nTransitions: " << t.GetNumberOfTransitions() <<
-        "\nMemory: " << t.GetAllocatedMemory() << "bytes" << std::endl;
+        "\nMemory (bytes): " << t.GetAllocatedMemory() << std::endl;
 
     if (bom && !attol::CheckBom<enc>(input))
         throw attol::Error("Input file with encoding ", int(enc), " does not match BOM!");
@@ -52,18 +53,8 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output,
     t.max_results = max_results;
     t.time_limit = max_time;
 
-    bool has_analyses = false;
-    t.resulthandler = [&has_analyses, output](const typename Transducer::Path& path)
-    {
-        static CharType c;
-        for (const auto& v : path)
-        {
-            fwrite(v.GetOutput(), sizeof(c), std::char_traits<CharType>::length(v.GetOutput()), output);
-        }
-        c = '\n';
-        fwrite(&c, sizeof(c), 1, output);
-        has_analyses = true;
-    };
+    attol::PrintFunction<enc, 32> printf(print, output);
+    t.resulthandler = printf.GetF();
 
     std::basic_string<typename Transducer::CharType> word;
     CharType c;
@@ -76,9 +67,9 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output,
                 continue;
             word.push_back(c);
         }
-        has_analyses = false;
+        printf.Reset();
         t.template Lookup<strategy>(word.c_str());
-        if (!has_analyses)
+        if (!printf.Succeeded())
         {
             c = '?';
             fwrite(&c, sizeof(c), 1, output);
@@ -95,7 +86,7 @@ int main(int argc, const char** argv)
     std::string transducer_filename, input_filename, output_filename;
     double time_limit = 0.0;
     size_t max_depth = 0, max_results = 0;
-    int print = 1, encoding = attol::UTF8;
+    int print = 3, encoding = attol::UTF8;
     bool bom = false;
     size_t field_separator = '\t';
 
@@ -136,18 +127,24 @@ int main(int argc, const char** argv)
                 attol::NEGATIVE, ": negative, return only those paths that were invalid flag-wise but correct analysis otherwise."),
             "", std::vector<int>({ attol::OBEY, attol::IGNORE, attol::NEGATIVE }));
         
-        //parser.AddArg(print, { "-p", "--print" },
-        //    attol::ToStr("What to print about the analyses\n",
-        //        0, ": output tape result\n",
-        //        1, ": output tape result with weights\n",
-        //        2, ": transition IDs along the path\n",
-        //        3, ": transition IDs along the path with weights"),
-        //    "", std::vector<int>({ 0,1,2,3 }));
+        parser.AddArg(print, { "-p", "--print" },
+            attol::ToStr("What to print about the analyses\n",
+                0, ": output tape result\n",
+                1, ": output tape result with weights\n",
+                2, ": output tape with special symbols resolved\n",
+                3, ": output tape with weights and special symbols resolved\n",
+                4, ": transition IDs along the path\n",
+                5, ": transition IDs along the path with weights\n",
+                6, ": input segmented\n",
+                7, ": input segmented with weights\n",
+                8, ": input segmented but flag diacritics removed\n",
+                9, ": input segmented with weights but flag diacritics removed\n",
+                "If the print argument is none of the above, then a questionmark will be printed for every input word."));
   
         parser.AddArg(encoding, { "-e", "--enc", "--encoding" },
             attol::ToStr("encoding of the transducer and also the input/output\n",
                 attol::ASCII, ": ASCII\n",
-                attol::CP, ": OCTET\tfixed 1 byte\n"
+                attol::OCTET, ": OCTET\tfixed 1 byte\n"
                                 "\t\tuse this for any of the extended ASCII character tables\n",
                                 "\t\tfor example ISO-8859 encodings\n",
                                 "\t\t(actually it's the same as ASCII)\n",

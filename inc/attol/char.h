@@ -32,11 +32,7 @@ struct CodeUnit
 template<>
 struct CodeUnit<Encoding::UCS2>
 {
-#ifdef WIN32
-    typedef wchar_t type;
-#else
-    typedef std::uint16_t type;
-#endif
+    typedef char16_t type;
     static const size_t size = sizeof(type);
     type c;
 };
@@ -45,11 +41,7 @@ struct CodeUnit<Encoding::UCS2>
 template<>
 struct CodeUnit<Encoding::UTF16>
 {
-#ifdef WIN32
-    typedef wchar_t type;
-#else
-    typedef std::uint16_t type;
-#endif
+    typedef char16_t type;
     static const size_t size = sizeof(type);
     type c;
 };
@@ -58,11 +50,7 @@ struct CodeUnit<Encoding::UTF16>
 template<>
 struct CodeUnit<Encoding::UTF32>
 {
-#ifdef WIN32
-    typedef std::uint32_t type;
-#else
-    typedef wchar_t type;
-#endif
+    typedef char32_t type;
     static const size_t size = sizeof(type);
     type c;
 };
