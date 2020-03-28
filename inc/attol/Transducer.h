@@ -10,7 +10,7 @@
 #include <type_traits>
 
 #include "attol/FlagDiacritics.h"
-#include "attol/char.h"
+#include "attol/Char.h"
 #include "attol/Utils.h"
 #include "attol/Record.h"
 
@@ -79,11 +79,11 @@ public:
     typedef std::vector<PathValue> Path;
 
     Transducer()
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler([](const Path&) {})
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler()
     {
     }
     Transducer(FILE* f, CharType field_separator = '\t')
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler([](const Path&) {})
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler()
     {
         Read(f, field_separator);
     }
@@ -225,7 +225,7 @@ public:
     size_t GetNumberOfStates()const { return n_states; }
     size_t GetAllocatedMemory()const{ return sizeof(Index)*transitions_table.size(); }
 
-    typedef std::function<void(const Path&)> ResultHandler;
+    typedef Handlers<Path> ResultHandler;
 
     size_t max_results;
     size_t max_depth;

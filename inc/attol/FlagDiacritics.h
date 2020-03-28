@@ -27,41 +27,7 @@ public:
     typedef const CharType* ccstr;
     typedef FlagStorageType StorageType;
 
-    struct State
-    {
-        State() : bitfield(0) {}
-        //! returns a mask, where there are 1's in places [i, j)
-        static inline StorageType Mask(unsigned char i, unsigned char j)
-        {
-            // mask 0000001111000000
-            //      5432109876543210
-            //           j   i      
-            return (((StorageType)1 << (j - i)) - (StorageType)1) << i;
-        }
-        StorageType Get(unsigned char i, unsigned char j)const
-        {
-            auto x = (((StorageType)1 << (j - i)) - (StorageType)1) & (bitfield >> i);
-            if (x >> (j - i - 1))
-            {   // negative value
-                x |= (StorageType)(-1) << (j - i);
-            }
-            return x;
-        }
-        void Set(unsigned char i, unsigned char j, StorageType new_value)
-        {
-            const auto mask = Mask(i, j);
-            // delete what's in place
-            bitfield &= ~mask;
-            // add new value to the right place
-            bitfield |= mask & (new_value << i);
-        }
-        void clear()
-        {
-            bitfield = 0;
-        }
-    protected:
-        StorageType bitfield;
-    };
+    typedef SignedBitfield<StorageType> State;
 
     std::vector<StorageType> GetValues(const State& s)const
     {
@@ -122,7 +88,7 @@ public:
     bool Apply(ccstr flags, State& state)const
     {
         const UCharType feature = flags[3];
-        const UCharType value = flags[4];
+        const auto value = (StorageType)(flags[4]);
         const unsigned char bit_start = offsets[feature - 1];
         const unsigned char bit_end = offsets[feature];
         const auto current_value = state.Get(bit_start, bit_end);

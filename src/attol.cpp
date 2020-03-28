@@ -4,7 +4,7 @@
 
 #include "ArgParser.h"
 #include "attol/Transducer.h"
-#include "attol/char.h"
+#include "attol/Char.h"
 #include "attol/Print.h"
 
 #ifdef WIN32
@@ -67,7 +67,7 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output,
         }
         if (!word.empty() && word.back() == '\r')
             word.pop_back();
-        printf.Reset();
+        printf.Reset(word.c_str());
         t.template Lookup<strategy>(word.c_str());
         if (!printf.Succeeded())
         {
@@ -86,15 +86,32 @@ int main(int argc, const char** argv)
     std::string transducer_filename, input_filename, output_filename;
     double time_limit = 0.0;
     size_t max_depth = 0, max_results = 0;
-    int print = 3, encoding = attol::UTF8;
+    int print = 305, encoding = attol::UTF8;
     bool bom = false;
     size_t field_separator = '\t';
-
     int flag_strategy = attol::OBEY;
     {
         arg::Parser<> parser("AT&T Optimized Lookup\n"
-                             "Author: Gabor Borbely, Contact: borbely@math.bme.hu",
-                             { "-h", "--help" }, std::cout, std::cerr, "", 80);
+                            "Author: Gabor Borbely, Contact: borbely@math.bme.hu",
+                            { "-h", "--help" }, std::cout, std::cerr, 
+        "As you can see, the --print bitfield is a bit odd. "
+        "This is because it is a signed bitfield where each flag can have actually 3 states: "
+        "on, off and negative. To store these options, we need 2 bits per field.\n"
+        "\t00\t'off' or 0\n"
+        "\t01\t'on' or 1\n"
+        "\t10\tunused (but it would be -2)\n"
+        "\t11\t'negative' or -'on' or simply -1\n"
+        "The print options follows:\n"
+        "\t0b00000001\t1\tfirst field on\n"
+        "\t0b00000100\t4\tsecond field on\n"
+        "\t0b00001100\t12\tsecond field negative\n"
+        "\t0b00010000\t16\tthird field on\n"
+        "\t0b00110000\t48\tthird field negative\n\tand so on...\n"
+        "In general, if a field has n bits of place then "
+        "that field is represented as a two's complement binary on n bits. "
+        "Such a field can hold values from -2^(n-1) to 2^(n-1)-1.\n"
+        "This type of bitfield is used in the flag diacritics as well."
+                            , 80);
 
         parser.AddArg(transducer_filename, {}, 
                         "AT&T (text) format transducer filename", "filename");
@@ -128,19 +145,17 @@ int main(int argc, const char** argv)
             "", std::vector<int>({ attol::OBEY, attol::IGNORE, attol::NEGATIVE }));
         
         parser.AddArg(print, { "-p", "--print" },
-            attol::ToStr("What to print about the analyses\n",
-                0, ": output tape result\n",
-                1, ": output tape result with weights\n",
-                2, ": output tape with special symbols resolved\n",
-                3, ": output tape with weights and special symbols resolved\n",
-                4, ": transition IDs along the path\n",
-                5, ": transition IDs along the path with weights\n",
-                6, ": input segmented\n",
-                7, ": input segmented with weights\n",
-                8, ": input segmented but flag diacritics removed\n",
-                9, ": input segmented with weights but flag diacritics removed\n",
-                "If the print argument is none of the above, then a question mark will be printed for every input word."));
-  
+            attol::ToStr("What to print about the analyses\nbitfield of the following values:\n",
+                1,   ": original word\n",
+                4, ": input segmented\n",
+                12, ": input segmented, flag diacritics removed\n",
+                16, ": output tape\n",
+                48, ": output tape with special symbols resolved\n",
+                64, ": transition IDs along the path\n",
+                256, ": weights of each path in log-probablities\n",
+                768, ": weights of each path in relative percent\n",
+                "0 means don't print anything"));
+        
         parser.AddArg(encoding, { "-e", "--enc", "--encoding" },
             attol::ToStr("encoding of the transducer and also the input/output\n",
                 attol::ASCII, ": ASCII\n",
@@ -150,13 +165,19 @@ int main(int argc, const char** argv)
                                 "\t\t(actually it's the same as ASCII)\n",
                 attol::UTF8, ": UTF-8\tsame as the above two with two notable differences:\n",
                                 "\t\tBOM may be used\n",
-                                "\t\tOne character is calculated according to continuation bytes\n",
+                                "\t\tOne character is calculated according to continuation bytes, "
+                                "character != byte\n",
                 attol::UCS2, ": UCS-2\tendianness depends on your CPU\n",
                 attol::UTF16, ": UTF16\tendianness depends on your CPU\n",
                 attol::UTF32, ": UTF32\tendianness depends on your CPU"),
             "", std::vector<int>({ attol::ASCII, attol::CP, attol::UTF8, attol::UCS2, attol::UTF16, attol::UTF32 }));
-
-        parser.AddFlag(bom, { "-bom", "-BOM", "--bom", "--BOM" }, "Use Byte Order Mark in front of all input/output and transducer file.");
+        
+        attol::BOM<attol::UTF16> binarybom;
+        char stringbom[10];
+        sprintf(stringbom, "0x%02hhX 0x%02hhX", binarybom.bytes[0], binarybom.bytes[1]);
+        parser.AddFlag(bom, { "-bom", "-BOM", "--bom", "--BOM" }, 
+            attol::ToStr("Use Byte Order Mark in front of all input/output and transducer file.\n",
+                "Your endianness: ", stringbom));
 
         parser.Do(argc, argv);
     }

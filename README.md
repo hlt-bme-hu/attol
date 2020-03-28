@@ -22,41 +22,39 @@ With Visual C++
                 input file to analyze, stdin if empty
         -o --output 'filename' default: ""
                 output file, stdout if empty
-        -t --time 'd' default: 0
+        -t --time 'double' default: 0
                 time limit (in seconds) when not to search further
                 unlimited if set to 0
-        -n 'm' default: 0
+        -n 'size_t' default: 0
                 max number of results for one word
                 unlimited if set to 0
-        -d --depth 'm' default: 0
+        -d --depth 'size_t' default: 0
                 maximum depth to go down during lookup
                 unlimited if set to 0
         -fs --fs --tab -ts --ts 'unicode decimal' default: 9
                 field separator, character between columns of transducer file
                 It has to be 1 code-unit wide, meaning that in UTF8 and UTF16 you cannot use characters
                 above U+007F and U+D7FF respectively.
-        -f --flag 'i' default: 1
+        -f --flag 'int' default: 1
                 how to treat the flag diacritics
                 0: ignore (off)
                 1: obey
                 2: negative, return only those paths that were invalid flag-wise but correct analysis
                 otherwise.
                 possible values: 0 1 2
-        -p --print 'i' default: 3
+        -p --print 'int' default: 305
                 What to print about the analyses
-                0: output tape result
-                1: output tape result with weights
-                2: output tape with special symbols resolved
-                3: output tape with weights and special symbols resolved
-                4: transition IDs along the path
-                5: transition IDs along the path with weights
-                6: input segmented
-                7: input segmented with weights
-                8: input segmented but flag diacritics removed
-                9: input segmented with weights but flag diacritics removed
-                If the print argument is none of the above, then a question mark will be printed
-                for every input word.
-        -e --enc --encoding 'i' default: 2
+                bitfield of the following values:
+                1: original word
+                4: input segmented
+                12: input segmented, flag diacritics removed
+                16: output tape
+                48: output tape with special symbols resolved
+                64: transition IDs along the path
+                256: weights of each path in log-probablities
+                768: weights of each path in relative percent
+                0 means don't print anything
+        -e --enc --encoding 'int' default: 2
                 encoding of the transducer and also the input/output
                 0: ASCII
                 1: OCTET        fixed 1 byte
@@ -65,12 +63,12 @@ With Visual C++
                                 (actually it's the same as ASCII)
                 2: UTF-8        same as the above two with two notable differences:
                                 BOM may be used
-                                One character is calculated according to continuation bytes
+                                One character is calculated according to continuation bytes, character != byte
                 3: UCS-2        endianness depends on your CPU
                 4: UTF16        endianness depends on your CPU
                 5: UTF32        endianness depends on your CPU
                 possible values: 0 1 2 3 4 5
-        -bom -BOM --bom --BOM 'b' default: false
+        -bom -BOM --bom --BOM 'bool' default: false
                 Use Byte Order Mark in front of all input/output and transducer file.
 
 ### Example

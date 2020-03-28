@@ -3,7 +3,7 @@
 #include <tuple>
 #include <type_traits>
 
-#include "attol/char.h"
+#include "attol/Char.h"
 
 namespace attol {
 

@@ -9,6 +9,8 @@
 #include <limits>
 #include <typeinfo>
 #include <utility>
+#include <list>
+#include <functional>
 
 namespace attol{
 
@@ -19,17 +21,39 @@ enum FlagStrategy
     NEGATIVE
 };
 
-//template<size_t width>
-//struct Round
-//{
-//    template<class Number>
-//    static Number Do(Number i)
-//    {
-//        static const Number mask1 = width - 1;
-//        static const Number mask2 = ~mask1;
-//        return (i + mask1) & mask2;
-//    }
-//};
+template<class Arg>
+struct Handlers
+{
+    std::list<std::function<void(const Arg&)>> handlers;
+    Handlers() : handlers(0) {}
+    void operator()(const Arg& path)const
+    {
+        for (auto& f : handlers)
+            f(path);
+    }
+    Handlers& operator+=(const Handlers& other)
+    {
+        handlers.emplace(handlers.end(),
+            other.handlers.begin(),
+            other.handlers.end());
+        return *this;
+    }
+    Handlers& operator+=(const std::function<void(const Arg&)>& g)
+    {
+        handlers.emplace_back(g);
+        return *this;
+    }
+    Handlers operator+(const Handlers& other)const
+    {
+        Handlers result(*this);
+        return result += other;
+    }
+    Handlers operator+(const std::function<void(const Arg&)>& g)const
+    {
+        Handlers result(*this);
+        return result += g;
+    }
+};
 
 template<class Return, class Arg>
 Return IntLog2(Arg s)
@@ -144,6 +168,49 @@ public:
     {
         return this->emplace(std::forward<KeyArg>(key), SaturateCast<Count>::Do(this->size())).first->second;
     }
+};
+
+template<class StorageType>
+struct SignedBitfield
+{
+    static_assert(std::is_signed<StorageType>::value, "");
+    SignedBitfield() : bitfield(0) {}
+    SignedBitfield(const StorageType& b) : bitfield(b) {}
+    //! returns a mask, where there are 1's in places [i, j)
+    static inline StorageType Mask(unsigned char i, unsigned char j)
+    {
+        // mask 0000001111000000
+        //      5432109876543210
+        //           j   i      
+        return (((StorageType)1 << (j - i)) - (StorageType)1) << i;
+    }
+    StorageType Get(unsigned char i, unsigned char j)const
+    {
+        auto x = (((StorageType)1 << (j - i)) - (StorageType)1) & (bitfield >> i);
+        if (x >> (j - i - 1))
+        {   // negative value
+            x |= (StorageType)(-1) << (j - i);
+        }
+        return x;
+    }
+    void Set(unsigned char i, unsigned char j, StorageType new_value)
+    {
+        const auto mask = Mask(i, j);
+        // delete what's in place
+        bitfield &= ~mask;
+        // add new value to the right place
+        bitfield |= mask & (new_value << i);
+    }
+    StorageType GetRaw()const
+    {
+        return bitfield;
+    }
+    void clear()
+    {
+        bitfield = 0;
+    }
+protected:
+    StorageType bitfield;
 };
 
 }
