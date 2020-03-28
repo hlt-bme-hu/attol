@@ -96,8 +96,41 @@ With Visual C++
     goose+N+PL      18.4541
 
 ## Performance
-This implementation is about twice as fast as a [hfst-lookup](https://github.com/hfst/hfst/wiki/HfstLookUp) with `hfstol` format.
+This implementation is several times faster than [hfst-lookup](https://github.com/hfst/hfst/wiki/HfstLookUp) with `hfstol` format.
 Also the peak memory usage is about half (or 2 third, depending on the transducer format).
+
+Measured against `hfst-lookup 0.6` with different `hfstlib` versions (marked in parenthesis) on various CPUs.
+* Only peak memory usage is reported
+* the output lines is just the result of `wc -l`
+* there is one notable difference between the output of `hfst` and `attol`
+  * `hfst` takes a union over the possible analyses, but only considers the output tape
+  * `attol` considers two analyses different if their transitions differ, however the output tape may be the same.
+  * this is the case for example with english _"kids"_.
+### English
+* data: lowercase words of [UMBC](https://ebiquity.umbc.edu/resource/html/id/351), first 1M most frequent types.
+* morphology: https://sourceforge.net/projects/hfst/files/resources/morphological-transducers/
+
+| tool        | CPU (single thread) | output lines | time (sec)  | memory (KiB) |
+| ----------- | -----------         | -----:        |-----:        |-----:         |
+| hfst (3.12.2) |Intel i7-4790K 4.00GHz   | 2258781 | 35.90 | 216928 |
+| attol       |Intel i7-4790K 4.00GHz   | 2258906 | 10.14 | 135648 |
+| hfst (3.12.0) |Intel Xeon E5520 2.27GHz | 2258781 | 68.49 | 221300 |
+| attol       |Intel Xeon E5520 2.27GHz | 2258906 | 25.77 | 122684 |
+| hfst (3.13.0) |Intel Pentium N4200 ~2GHz| 2258781 | 120.11| 213860 |
+| attol       |Intel Pentium N4200 ~2GHz| 2258906 | 38.06 | 130044 |
+
+### Hungarian
+* data: lowercase words of [MNSZ2](http://clara.nytud.hu/mnsz2-dev/), first 1M most frequent types.
+* morphology: https://github.com/dlt-rilmta/emMorph
+
+| tool        | CPU (single thread) | output lines | time (sec)  | memory (KiB) |
+| ----------- | -----------         | -----:        |-----:        |-----:         |
+| hfst (3.12.2) |Intel i7-4790K 4.00GHz   | 2731214 | 60.17 | 303924 |
+| attol       |Intel i7-4790K 4.00GHz   | 2731278 | 15.13 | 149792 |
+| hfst (3.12.0) |Intel Xeon E5520 2.27GHz | 2731214 | 117.50| 307564 |
+| attol       |Intel Xeon E5520 2.27GHz | 2731278 | 33.50 | 129520 |
+| hfst (3.13.0) |Intel Pentium N4200 ~2GHz| 2731214 | 175.76| 260040 |
+| attol       |Intel Pentium N4200 ~2GHz| 2731278 | 57.28 | 130044 |
 
 ## Encoding
 The tool is able to operate in the following modes:
