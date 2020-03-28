@@ -2,18 +2,23 @@
 Given an [AT&amp;T text format](https://github.com/hfst/hfst/wiki/HfstFst2Txt) transducer, this tool performs lookup.
 
 ## Compile
-All you need is [cmake](https://cmake.org/) (>=3.1) and a c++11 compliant compiler (or Visual Studio 17, or later)
+All you need is [cmake](https://cmake.org/) (>=3.1) and a c++11 compliant compiler or Visual Studio 15 (vc14, v140, `_MSC_VER 1900`), or later.
 
-With gcc and make:
+* With gcc and make:
 
-    cmake -DCMAKE_BUILD_TYPE=Release .
-    make
+      cmake -DCMAKE_BUILD_TYPE=Release .
+      make
  
-With Visual C++
+* With Visual C++ and NMake
  
-    cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release .
-    nmake
+      cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release .
+      nmake
 
+* With Visual Studio 2019
+
+      cmake -G "Visual Studio 16 2019" -A x64 .
+      start attol.sln
+    
 ## Usage
  - positional argument: AT&T (text) format transducer filename
  - optional arguments:
