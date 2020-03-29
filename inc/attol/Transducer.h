@@ -8,6 +8,8 @@
 #include <tuple>
 #include <cstdint>
 #include <type_traits>
+#include <unordered_set>
+#include <algorithm>
 
 #include "attol/FlagDiacritics.h"
 #include "attol/Char.h"
@@ -217,6 +219,112 @@ public:
 
         // supposing that the START is the first row
         start_state = state_pointers[(Index)0];
+    }
+    bool Write(FILE* f, CharType field_separator = '\t')const
+    {
+        std::vector<Index> sorted_pointers;
+        const RecordIterator<const Index, const CharType> end(transitions_table.data() + transitions_table.size());
+        {
+            std::unordered_set<Index> pointers;
+            pointers.reserve(n_states + 1);
+            pointers.emplace(start_state[0]);
+            pointers.emplace(start_state[1]);
+            for (RecordIterator<const Index, const CharType> i(transitions_table.data()); i < end; ++i)
+            {
+                if (i.GetTo() != std::numeric_limits<Index>::max())
+                {
+                    pointers.emplace(i.GetFrom());
+                    pointers.emplace(i.GetTo());
+                }
+            }
+            pointers.emplace((Index)transitions_table.size());
+            sorted_pointers.assign(pointers.begin(), pointers.end());
+        }
+        std::sort(sorted_pointers.begin(), sorted_pointers.end());
+        string line;
+        Index from_state = 0, to_state;
+        const CharType newline = '\n';
+
+        for (RecordIterator<const Index, const CharType> i(transitions_table.data()); i < end; ++i)
+        {
+            while (sorted_pointers[from_state + 1] <= (const Index*)i - transitions_table.data())
+            {
+                ++from_state;
+            }
+            line = WriteIndex<CharType>(from_state);
+            line += field_separator;
+            if (i.GetTo() == std::numeric_limits<Index>::max())
+            {   // final state
+                line += WriteFloat<CharType>(i.GetWeight());
+            }
+            else if (i.GetFrom() != i.GetTo())
+            {   // non-final and non-dangling
+                to_state = (Index)(std::lower_bound(sorted_pointers.begin(), sorted_pointers.end(), i.GetFrom()) - sorted_pointers.begin());
+                line += WriteIndex<CharType>(to_state);
+                line += field_separator;
+                if (fd_table.IsIt(i.GetOutput()))
+                    line += i.GetOutput();
+                else
+                    line += i.GetInput();
+                line += field_separator;
+                line += i.GetOutput();
+                line += field_separator;
+                line += WriteFloat<CharType>(i.GetWeight());
+            }
+            else
+                continue;
+            line += newline;
+            if (fwrite(line.c_str(), sizeof(CharType), line.size(), f) != line.size())
+                return false;
+        }
+        return true;
+    }
+    bool WriteBinary(FILE* f)const
+    {
+        if (!WriteBom<enc>(f))
+            return false;
+        {
+            const Index width = storageSize;
+            if (fwrite(&width, sizeof(Index), 1, f) != 1)
+                return false;
+        }
+        if (fwrite(start_state.data(), sizeof(start_state), 1, f) != 1)
+            return false;
+        auto offsets = fd_table.GetOffsets();
+        offsets.resize(256, '\xFF');
+        if (fwrite(offsets.data(), 256, 1, f) != 1)
+            return false;
+        if (fwrite(transitions_table.data(), sizeof(Index), transitions_table.size(), f) != transitions_table.size())
+            return false;
+        return true;
+    }
+    bool ReadBinary(FILE* f)
+    {
+        if (!CheckBom<enc>(f))
+            return false;
+        {
+            Index width;
+            if (fread(&width, sizeof(Index), 1, f) != 1)
+                return false;
+            if (width != storageSize)
+                return false;
+        }
+        if (fread(start_state.data(), sizeof(start_state), 1, f) != 1)
+            return false;
+
+        std::vector<unsigned char> offsets(256);
+        if (fread(offsets.data(), 256, 1, f) != 1)
+            return false;
+        fd_table.SetOffsets(offsets);
+        const auto pos = ftell(f);
+        fseek(f, 0, SEEK_END);
+        const auto size = ftell(f) - pos;
+        fseek(f, pos, SEEK_SET);
+        transitions_table.resize(size / sizeof(Index));
+        if (fread(transitions_table.data(), sizeof(Index), transitions_table.size(), f) != transitions_table.size())
+            return false;
+
+        return true;
     }
 
     //! including to finishing from a final state

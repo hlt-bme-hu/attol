@@ -20,13 +20,34 @@ All you need is [cmake](https://cmake.org/) (>=3.1) and a c++11 compliant compil
       start attol.sln
     
 ## Usage
- - positional argument: AT&T (text) format transducer filename
+
+### Help
+
+    attol [-h|--help]
+    
+### Short arguments
+
+    attol [-bi] 'filename' [-bo] [-w 'filename'] 
+          [-i 'filename'] [-o 'filename']
+          [-t 'double'] [-n 'size_t'] [-d 'size_t'] 
+          [-fs 'unicode decimal'] [-f 'int'] [-p 'int'] 
+          [-e 'int'] [-bom]
+
+### Long arguments
+ - positional argument: AT&T (text or binary) format transducer filename
  - optional arguments:
 
+        -bi --binary-input 'bool' default: false
+                Read the transducer in a binary format
         -i --input 'filename' default: ""
                 input file to analyze, stdin if empty
         -o --output 'filename' default: ""
                 output file, stdout if empty
+        -w --write --dump 'filename' default: ""
+                Write the transducer to file after loading, can be used for conversion.
+                Don't convert the transducer if this argument is empty.
+        -bo --binary-output 'bool' default: false
+                Write the transducer in a binary format
         -t --time 'double' default: 0
                 time limit (in seconds) when not to search further
                 unlimited if set to 0
@@ -102,15 +123,19 @@ All you need is [cmake](https://cmake.org/) (>=3.1) and a c++11 compliant compil
 
 ## Performance
 This implementation is several times faster than [hfst-lookup](https://github.com/hfst/hfst/wiki/HfstLookUp) with `hfstol` format.
-Also the peak memory usage is about half (or 2 third, depending on the transducer format).
+Also the peak memory usage is about half of `hfst`, or even less, depending on the transducer format.
 
-Measured against `hfst-lookup 0.6` with different `hfstlib` versions (marked in parenthesis) on various CPUs.
+* Measured against `hfst-lookup 0.6` with different `hfstlib` versions (marked in parenthesis) on various CPUs.
 * Only peak memory usage is reported
 * the output lines is just the result of `wc -l`
 * there is one notable difference between the output of `hfst` and `attol`
   * `hfst` takes a union over the possible analyses, but only considers the output tape
   * `attol` considers two analyses different if their transitions differ, however the output tape may be the same.
   * this is the case for example with english _"kids"_.
+* In the tests, the transducers were loaded in a text (AT&T) format.
+  * converting to attol's own binary format first makes loading time instantaneous and also reduces peak memory usage.
+  * although, sustained memory usage is the same for both formats.
+
 ### English
 * data: lowercase words of [UMBC](https://ebiquity.umbc.edu/resource/html/id/351), first 1M most frequent types.
 * morphology: https://sourceforge.net/projects/hfst/files/resources/morphological-transducers/
@@ -156,6 +181,7 @@ You can choose optional BOM for multi-byte encodings (UTF-8, USC-2, UTF-16 and U
  
 If you have a transducer file in any of the above formats, then you can read and write similarly encoded inputs and outputs. For example:
 
-    attol --enc 4 --bom transducer.txt -i input.txt -o output.txt
+    ./attol --enc 4 --bom data/flags.win.att -i flag.test.win.txt -o output_UTF16-LE.txt
+
 ## EOL
 Windows `\r\n` end-of-line is handled during read, but output is always in Linux `\n` format.

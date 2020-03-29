@@ -189,6 +189,8 @@ public:
                 " bits, but FlagDiacritics::State is only ", sizeof(StorageType) * CHAR_BIT, " bits wide!");
         offsets.emplace_back(bits);
     }
+    std::vector<unsigned char> GetOffsets()const { return offsets; }
+    void SetOffsets(const std::vector<unsigned char>& o){ offsets = o; }
 private:
     std::unordered_map<string, std::unordered_set<string>> flag_map;
     std::vector<unsigned char> offsets;

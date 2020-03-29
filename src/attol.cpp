@@ -25,24 +25,47 @@ void SetBinary()
 }
 #endif
 
+double time_limit = 0.0;
+size_t max_depth = 0, max_results = 0;
+int print_type = 305;
+bool bom = false, binary_input = false, binary_output = false;
+std::string dump_filename;
+size_t field_separator = '\t';
+
 template<attol::Encoding enc, attol::FlagStrategy strategy>
-void do_main(std::string transducer_filename, FILE* input, FILE* output,
-    size_t max_results, size_t max_depth, double max_time, int print, bool bom, size_t fs)
+void do_main(std::string transducer_filename, FILE* input, FILE* output)
 {
     typedef attol::Transducer<enc, 32> Transducer;
     typedef typename Transducer::CharType CharType;
 
+    Transducer t;
     FILE* f = fopen(transducer_filename.c_str(), "rb");
     if (!f)
         throw attol::Error("Cannot open \"", transducer_filename, "\"!");
-    if (bom && !attol::CheckBom<enc>(f))
-        throw attol::Error("File \"", transducer_filename, "\" with encoding ", int(enc), " does not match BOM!");
-    Transducer t(f, CharType(fs));
+    if (binary_input)
+    {
+        if (!t.ReadBinary(f))
+            throw attol::Error("Binary file \"", transducer_filename, "\" is an invalid transducer!");
+    } else
+    {
+        if (bom && !attol::CheckBom<enc>(f))
+            throw attol::Error("File \"", transducer_filename, "\" with encoding ", int(enc), " does not match BOM!");
+        t.Read(f, CharType(field_separator));
+        std::cerr << "Transducer states: " << t.GetNumberOfStates() <<
+            "\nTransitions: " << t.GetNumberOfTransitions() <<
+            "\nMemory (bytes): " << t.GetAllocatedMemory() << std::endl;
+    }
     fclose(f);
 
-    std::cerr << "Transducer states: " << t.GetNumberOfStates() <<
-        "\nTransitions: " << t.GetNumberOfTransitions() <<
-        "\nMemory (bytes): " << t.GetAllocatedMemory() << std::endl;
+    if (!dump_filename.empty())
+    {
+        FILE* dumpfile = fopen(dump_filename.c_str(), "wb");
+        if (!dumpfile)
+            throw attol::Error("Cannot open \"", dump_filename, "\" for writing!");
+        if (!(binary_output ? t.WriteBinary(f) : t.Write(f, CharType(field_separator))))
+            throw attol::Error("Cannot write transducer into \"", dump_filename, "\"!");
+        fclose(dumpfile);
+    }
 
     if (bom && !attol::CheckBom<enc>(input))
         throw attol::Error("Input file with encoding ", int(enc), " does not match BOM!");
@@ -51,9 +74,9 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output,
 
     t.max_depth = max_depth;
     t.max_results = max_results;
-    t.time_limit = max_time;
+    t.time_limit = time_limit;
 
-    attol::PrintFunction<enc, 32> printf(print, output);
+    attol::PrintFunction<enc, 32> printf(print_type, output);
     t.resulthandler = printf.GetF();
 
     std::basic_string<typename Transducer::CharType> word;
@@ -84,11 +107,7 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output,
 int main(int argc, const char** argv)
 {
     std::string transducer_filename, input_filename, output_filename;
-    double time_limit = 0.0;
-    size_t max_depth = 0, max_results = 0;
-    int print = 305, encoding = attol::UTF8;
-    bool bom = false;
-    size_t field_separator = '\t';
+    int encoding = attol::UTF8;
     int flag_strategy = attol::OBEY;
     {
         arg::Parser<> parser("AT&T Optimized Lookup\n"
@@ -115,12 +134,20 @@ int main(int argc, const char** argv)
 
         parser.AddArg(transducer_filename, {}, 
                         "AT&T (text) format transducer filename", "filename");
-            
+        parser.AddFlag(binary_input, { "-bi", "--binary-input" },
+            "Read the transducer in a binary format");
+
         parser.AddArg(input_filename, { "-i", "--input" },
                         "input file to analyze, stdin if empty", "filename");
         parser.AddArg(output_filename, { "-o", "--output" },
                         "output file, stdout if empty", "filename");
         
+        parser.AddArg(dump_filename, {"-w", "--write", "--dump"},
+            "Write the transducer to file after loading, can be used for conversion. \n"
+            "Don't convert the transducer if this argument is empty.", "filename");
+        parser.AddFlag(binary_output, { "-bo", "--binary-output" },
+            "Write the transducer in a binary format");
+
         parser.AddArg(time_limit, { "-t", "--time" }, 
                         "time limit (in seconds) when not to search further\n"
                         "unlimited if set to 0");
@@ -144,7 +171,7 @@ int main(int argc, const char** argv)
                 attol::NEGATIVE, ": negative, return only those paths that were invalid flag-wise but correct analysis otherwise."),
             "", std::vector<int>({ attol::OBEY, attol::IGNORE, attol::NEGATIVE }));
         
-        parser.AddArg(print, { "-p", "--print" },
+        parser.AddArg(print_type, { "-p", "--print" },
             attol::ToStr("What to print about the analyses\nbitfield of the following values:\n",
                 1,   ": original word\n",
                 4, ": input segmented\n",
@@ -174,7 +201,7 @@ int main(int argc, const char** argv)
         
         attol::BOM<attol::UTF16> binarybom;
         char stringbom[10];
-        sprintf(stringbom, "0x%02hhX 0x%02hhX", binarybom.bytes[0], binarybom.bytes[1]);
+        snprintf(stringbom, 10, "0x%02hhX 0x%02hhX", binarybom.bytes[0], binarybom.bytes[1]);
         parser.AddFlag(bom, { "-bom", "-BOM", "--bom", "--BOM" }, 
             attol::ToStr("Use Byte Order Mark in front of all input/output and transducer file.\n",
                 "Your endianness: ", stringbom));
@@ -263,9 +290,7 @@ try{
             break;
         } break;
     }
-    mainf(transducer_filename, input, output,
-            max_results, max_depth, time_limit,
-            print, bom, field_separator);
+    mainf(transducer_filename, input, output);
     return 0;
 }
 catch (const std::exception& e)

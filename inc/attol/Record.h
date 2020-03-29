@@ -50,6 +50,7 @@ public:
     {
         return p < other;
     }
+    operator StorageType* ()const { return p; }
 protected:
     StorageType* p;
     StorageType* s_p;
