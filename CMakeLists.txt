@@ -16,3 +16,7 @@ file( GLOB HEADER_FILES "${PROJECT_SOURCE_DIR}/inc/attol/*.h")
 add_executable(attol "${HEADER_FILES}"
     "${PROJECT_SOURCE_DIR}/inc/ArgParser.h"
     "${PROJECT_SOURCE_DIR}/src/attol.cpp")
+
+add_executable(attol-utf8 "${HEADER_FILES}"
+    "${PROJECT_SOURCE_DIR}/inc/ArgParser.h"
+    "${PROJECT_SOURCE_DIR}/src/attol-utf8.cpp")

@@ -81,11 +81,11 @@ public:
     typedef std::vector<PathValue> Path;
 
     Transducer()
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler()
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), results()
     {
     }
     Transducer(FILE* f, CharType field_separator = '\t')
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler()
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), results()
     {
         Read(f, field_separator);
     }
@@ -338,15 +338,16 @@ public:
     size_t max_results;
     size_t max_depth;
     double time_limit;
-    std::function<void(const Path&)> resulthandler;
+    std::vector<Path> results;
 
     template<FlagStrategy strategy = FlagStrategy::OBEY>
-    void Lookup(const CharType* s)const
+    void Lookup(const CharType* s)
     {
+        results.clear();
         lookup<strategy>(nullptr, 0, 0);
         return lookup<strategy>(s, start_state[0], start_state[1]);
     }
-    void Lookup(const CharType* s, FlagStrategy strategy)const
+    void Lookup(const CharType* s, FlagStrategy strategy)
     {
         switch (strategy)
         {
@@ -360,7 +361,7 @@ public:
     }
 private:
     template<FlagStrategy strategy>
-    void lookup(const CharType* s, Index beg, const Index end) const
+    void lookup(const CharType* s, Index beg, const Index end)
     {
         static thread_local Path path;
         static thread_local size_t n_results;
@@ -392,7 +393,7 @@ private:
                 {   // that's a result
                     ++n_results;
                     path.emplace_back(i, flag_state);
-                    resulthandler(path);
+                    results.emplace_back(path);
                     path.pop_back();
                 }
             }
