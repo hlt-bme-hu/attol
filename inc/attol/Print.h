@@ -7,6 +7,7 @@
 #include "attol/Char.h"
 #include "attol/Transducer.h"
 #include "attol/FlagDiacritics.h"
+#include "attol/Utils.h"
 
 namespace attol {
 
@@ -15,7 +16,7 @@ class PrintFunction
 {
 private:
     typedef Transducer<enc, storageSize> T;
-    typename T::ResultHandler f;
+    Handlers<typename T::Path> f;
     typedef std::char_traits<typename T::CharType> CharTraits;
     
     FILE* output;
@@ -327,7 +328,7 @@ public:
         }
         return has_analyses; 
     }
-    typename T::ResultHandler& GetF() { return f; }
+    Handlers<typename T::Path>& GetF() { return f; }
 };
 
 }

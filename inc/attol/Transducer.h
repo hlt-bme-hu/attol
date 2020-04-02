@@ -333,12 +333,12 @@ public:
     size_t GetNumberOfStates()const { return n_states; }
     size_t GetAllocatedMemory()const{ return sizeof(Index)*transitions_table.size(); }
 
-    typedef Handlers<Path> ResultHandler;
+    // typedef Handlers<Path> ResultHandler;
 
     size_t max_results;
     size_t max_depth;
     double time_limit;
-    ResultHandler resulthandler;
+    std::function<void(const Path&)> resulthandler;
 
     template<FlagStrategy strategy = FlagStrategy::OBEY>
     void Lookup(const CharType* s)const
