@@ -39,32 +39,38 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output)
     typedef typename Transducer::CharType CharType;
 
     Transducer t;
-    FILE* f = fopen(transducer_filename.c_str(), "rb");
-    if (!f)
-        throw attol::Error("Cannot open \"", transducer_filename, "\"!");
-    if (binary_input)
     {
-        if (!t.ReadBinary(f))
-            throw attol::Error("Binary file \"", transducer_filename, "\" is an invalid transducer!");
-    } else
-    {
-        if (bom && !attol::CheckBom<enc>(f))
-            throw attol::Error("File \"", transducer_filename, "\" with encoding ", int(enc), " does not match BOM!");
-        t.Read(f, CharType(field_separator));
-        std::cerr << "Transducer states: " << t.GetNumberOfStates() <<
-            "\nTransitions: " << t.GetNumberOfTransitions() <<
-            "\nMemory (bytes): " << t.GetAllocatedMemory() << std::endl;
+        FILE* f = fopen(transducer_filename.c_str(), "rb");
+        if (!f)
+            throw attol::Error("Cannot open \"", transducer_filename, "\"!");
+        std::cerr << "Reading transducer \"" << transducer_filename << "\" ... " << std::endl;
+        if (binary_input)
+        {
+            if (!t.ReadBinary(f))
+                throw attol::Error("Binary file \"", transducer_filename, "\" is an invalid transducer!");
+            std::cerr << "Memory (bytes): " << t.GetAllocatedMemory() << std::endl;
+        }
+        else
+        {
+            if (bom && !attol::CheckBom<enc>(f))
+                throw attol::Error("File \"", transducer_filename, "\" with encoding ", int(enc), " does not match BOM!");
+            t.Read(f, CharType(field_separator));
+            std::cerr << "States: " << t.GetNumberOfStates() <<
+                "\nTransitions: " << t.GetNumberOfTransitions() << std::endl;
+        }
+        fclose(f);
     }
-    fclose(f);
-
     if (!dump_filename.empty())
     {
-        FILE* dumpfile = fopen(dump_filename.c_str(), "wb");
-        if (!dumpfile)
+        FILE* f = fopen(dump_filename.c_str(), "wb");
+        if (!f)
             throw attol::Error("Cannot open \"", dump_filename, "\" for writing!");
+        std::cerr << "Writing transducer \"" << dump_filename << "\" ... ";
+        std::cerr.flush();
         if (!(binary_output ? t.WriteBinary(f) : t.Write(f, CharType(field_separator))))
             throw attol::Error("Cannot write transducer into \"", dump_filename, "\"!");
-        fclose(dumpfile);
+        fclose(f);
+        std::cerr << "done" << std::endl;
     }
 
     if (bom && !attol::CheckBom<enc>(input))
