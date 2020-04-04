@@ -33,17 +33,11 @@ private:
     {
         ToPointers() { this->fill((Index)0); }
     };
-
-    std::vector<Index> transitions_table;
-    ToPointers start_state;
-    size_t n_transitions, n_states;
 public:
     typedef FlagDiacritics<CharType, typename std::make_signed<Index>::type> FlagDiacriticsType;
     typedef typename FlagDiacriticsType::State FlagState;
     typedef std::basic_string<CharType> string;
-private:
-    FlagDiacriticsType fd_table;
-public:
+    
     struct PathValue : protected std::tuple<const CharType*, const CharType*, Index, Float, FlagState>
     {
         typedef std::tuple<const CharType*, const CharType*, Index, Float, FlagState> TupleType;
@@ -79,13 +73,23 @@ public:
         }
     };
     typedef std::vector<PathValue> Path;
-
+private:
+    std::vector<Index> transitions_table;
+    ToPointers start_state;
+    size_t n_transitions, n_states;
+    FlagDiacriticsType fd_table;
+    // during the lookup
+    Path path;
+    size_t n_results;
+    Clock<> myclock;
+    bool flag_failed;
+public:
     Transducer()
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), results()
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler([](const Path&) {})
     {
     }
     Transducer(FILE* f, CharType field_separator = '\t')
-        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), results()
+        : n_transitions(0), n_states(0), max_results(0), max_depth(0), time_limit(0), resulthandler([](const Path&) {})
     {
         Read(f, field_separator);
     }
@@ -134,7 +138,7 @@ public:
                     output.assign(line.data() + pos, line.data() + pos_next);
                     break;
                 default:
-                    throw Error("AT&T file at line", n_transitions + 1, " has more than ", i, " columns!");
+                    throw Error("AT&T file at line ", n_transitions + 1, " has more than ", i, " columns!");
                 }
                 pos = pos_next + 1;
             }
@@ -338,49 +342,44 @@ public:
     size_t max_results;
     size_t max_depth;
     double time_limit;
-    std::vector<Path> results;
+    std::function<void(const Path& path)> resulthandler;
 
-    template<FlagStrategy strategy = FlagStrategy::OBEY>
+    template<FlagStrategy strategy = FlagStrategy::OBEY, bool check_limits = false>
     void Lookup(const CharType* s)
     {
-        results.clear();
-        lookup<strategy>(nullptr, 0, 0);
-        return lookup<strategy>(s, start_state[0], start_state[1]);
+        if (check_limits)
+            lookup<strategy>(nullptr, 0, 0);
+        path.clear();        
+        n_results = 0;
+        myclock.Tick();
+        flag_failed = false;
+        return lookup<strategy, check_limits>(s, start_state[0], start_state[1]);
     }
+    template<bool check_limits = false>
     void Lookup(const CharType* s, FlagStrategy strategy)
     {
         switch (strategy)
         {
         case FlagStrategy::IGNORE:
-            return Lookup<IGNORE>(s);
+            return Lookup<IGNORE, check_limits>(s);
         case FlagStrategy::NEGATIVE:
-            return Lookup<NEGATIVE>(s);
+            return Lookup<NEGATIVE, check_limits>(s);
         default:
-            return Lookup<OBEY>(s);
+            return Lookup<OBEY, check_limits>(s);
         };
     }
 private:
-    template<FlagStrategy strategy>
+    template<FlagStrategy strategy, bool check_limits = false>
     void lookup(const CharType* s, Index beg, const Index end)
     {
-        static thread_local Path path;
-        static thread_local size_t n_results;
-        static thread_local Clock<> myclock;
-        static thread_local bool flag_failed;
-
-        if (s == nullptr)
+        if (check_limits)
         {
-            path.clear();
-            n_results = 0;
-            myclock.Tick();
-            flag_failed = false;
-            return;
-        }
-        if ((max_results > 0 && n_results >= max_results) ||
-            (max_depth > 0 && path.size() >= max_depth) ||
-            (time_limit > 0 && myclock.Tock() >= time_limit))
-        {
-            return;
+            if ((max_results > 0 && n_results >= max_results) ||
+                (max_depth > 0 && path.size() >= max_depth) ||
+                (time_limit > 0 && myclock.Tock() >= time_limit))
+            {
+                return;
+            }
         }
         const auto flag_state = path.empty() ? FlagState() : path.back().GetFlag();
         for (RecordIterator<const Index, const CharType> i(transitions_table.data() + beg); i < transitions_table.data() + end; ++i)
@@ -391,14 +390,15 @@ private:
             {   //final state
                 if (*s == 0 && (strategy != NEGATIVE || flag_failed))
                 {   // that's a result
-                    ++n_results;
+                    if (check_limits)
+                        ++n_results;
                     path.emplace_back(i, flag_state);
-                    results.emplace_back(path);
+                    resulthandler(path);
                     path.pop_back();
                 }
             }
             else if (*s != 0 && (StrEqual(input, "@_IDENTITY_SYMBOL_@") || StrEqual(input, "@_UNKNOWN_SYMBOL_@")))
-            {   // consume one character, is s is empty, then there is nothing to consume
+            {   // consume one character, if s is empty, then there is nothing to consume
                 // TODO this can be hastened if the special symbols are shorter!
                 path.emplace_back(s, i.GetOutput(), i.GetId(), i.GetWeight(), flag_state);
                 lookup<strategy>(GetNextCharacter<enc>(s), i.GetFrom(), i.GetTo());

@@ -83,7 +83,7 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output)
     t.time_limit = time_limit;
 
     attol::PrintFunction<enc, 32> printf(print_type, output);
-
+    t.resulthandler = printf.GetF();
     std::basic_string<typename Transducer::CharType> word;
     CharType c;
     while (!feof(input))
@@ -95,12 +95,8 @@ void do_main(std::string transducer_filename, FILE* input, FILE* output)
         }
         if (!word.empty() && word.back() == '\r')
             word.pop_back();
-        t.template Lookup<strategy>(word.c_str());
         printf.Reset(word.c_str());
-        for (const auto& path : t.results)
-        {
-            printf.GetF()(path);
-        }
+        t.template Lookup<strategy, true>(word.c_str());
         if (!printf.Succeeded())
         {
             c = '?';

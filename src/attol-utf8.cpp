@@ -60,13 +60,10 @@ try{
     {
         if (!t.ReadBinary(f))
             throw attol::Error("Binary file \"", transducer_filename, "\" is an invalid transducer!");
-        std::cerr << "Transducer memory usage: " << t.GetAllocatedMemory() << "bytes" << std::endl;
     }
     else
     {
         t.Read(f);
-        std::cerr << "Transducer states: " << t.GetNumberOfStates() <<
-            "\nTransitions: " << t.GetNumberOfTransitions() << std::endl;
     }
     fclose(f);
 
@@ -74,19 +71,28 @@ try{
     t.max_results = max_results;
     t.time_limit = time_limit;
 
-    auto lookup = &decltype(t)::Lookup<attol::OBEY>;
+    auto lookup = &decltype(t)::Lookup<attol::OBEY, false>;
     switch (flag_strategy)
     {
     case attol::FlagStrategy::IGNORE:
-        lookup = &decltype(t)::Lookup<attol::IGNORE>;
+        lookup = &decltype(t)::Lookup<attol::IGNORE, false>;
         break;
     case attol::FlagStrategy::NEGATIVE:
-        lookup = &decltype(t)::Lookup<attol::NEGATIVE>;
+        lookup = &decltype(t)::Lookup<attol::NEGATIVE, false>;
         break;
     }
     std::string word;
     char c;
-
+    t.resulthandler = [&word](const decltype(t)::Path& path)
+    {
+        fputs(word.c_str(), stdout);
+        fputc('\t', stdout);
+        for (const auto& v : path)
+        {
+            fputs(v.InterpretOutput(), stdout);
+        }
+        fputc('\n', stdout);
+    };
     while (!feof(stdin))
     {
         word.clear();
@@ -95,16 +101,6 @@ try{
             word.push_back(c);
         }
         (t.*lookup)(word.data());
-        for (const auto& path : t.results)
-        {
-            fputs(word.c_str(), stdout);
-            fputc('\t', stdout);
-            for (const auto& v : path)
-            {
-                fputs(v.InterpretOutput(), stdout);
-            }
-            fputc('\n', stdout);
-        }
     }
     return 0;
 }
