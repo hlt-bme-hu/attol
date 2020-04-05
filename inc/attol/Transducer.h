@@ -45,7 +45,7 @@ bool AttParse(const std::basic_string<CharType>& line,
             break;
         default:
             return false;
-            //throw Error("AT&T file at line ", transitions_table.size() + 1, " has more than ", i, " columns!");
+            //throw Error("AT&T file at line ", transitions.size() + 1, " has more than ", i, " columns!");
         }
         pos = pos_next + 1;
     }
@@ -73,7 +73,7 @@ bool AttParse(const std::basic_string<CharType>& line,
         break;
     default:
         return false;
-        // throw Error("AT&T text file at line ", transitions_table.size() + 1, " has wrong number of columns!");
+        // throw Error("AT&T text file at line ", transitions.size() + 1, " has wrong number of columns!");
     }
     return true;
 }
@@ -93,19 +93,22 @@ private:
     {
         Index from;
         Index to;
-        Index input_symbol;
-        Index output_symbol;
+        Index input;
+        Index output;
         Float weight;
         bool operator<(const Transition& other)const
         {
-            //if (to != std::numeric_limits<Index>::max() || other.to != std::numeric_limits<Index>::max())
-            //{
-            //    return to < other.to;
-            //}
-
-            //return  ? false : (
-            //    input_symbol == 0 ? true :  )
-            return input_symbol < other.input_symbol;
+            // max value in 'to' means 'go to final state'
+            if (to == std::numeric_limits<Index>::max() || other.to == std::numeric_limits<Index>::max())
+            {
+                return to > other.to;
+            }
+            // empty_symbol is always the first
+            if (input == 0 || other.input == 0)
+            {
+                return input < other.input;
+            }
+            return input > other.input;
         }
     };
 public:
@@ -165,7 +168,7 @@ private:
     }
     std::vector<CharType> raw_alphabet;
     std::vector<Index> alphabet;
-    std::vector<Transition> transitions_table;
+    std::vector<Transition> transitions;
     size_t n_states;
     FlagDiacriticsType fd_table;
     Index unknown_symbol, identity_symbol, empty_symbol, flag_symbol;
@@ -192,7 +195,7 @@ public:
     {
         std::unordered_map<Index, Index> start_pointers;
         start_pointers[0] = 0;
-        transitions_table.clear();
+        transitions.clear();
         alphabet.clear();
         n_states = 0;
         Counter<string, Index> alphabet_hash, flag_hash;
@@ -201,8 +204,6 @@ public:
             Index previous_state = 0;
             string line;
             Index from = 0, to = std::numeric_limits<Index>::max();
-            // Counter<const CharType*, Index, StrHash<CharType>, StrEqualType<CharType>> states;
-            // Counter<string, Index> states;
             string input, output;
             Float weight;
             empty_symbol = alphabet_hash[Convert<CharType>("")];
@@ -218,17 +219,17 @@ public:
                 if (line.empty())
                     break;
                 if (!AttParse<CharType>(line, from, to, weight, input, output, field_separator))
-                    throw Error("AT&T file at line ", transitions_table.size() + 1, " is invalid!");
+                    throw Error("AT&T file at line ", transitions.size() + 1, " is invalid!");
 
                 if (previous_state != from)
                 {
                     if (start_pointers.find(from) != start_pointers.end())
                         // this state has already been visited
-                        throw Error("Transitions are not ordered by starting state! Starting state of transition ", transitions_table.size() + 1, " has already been visited.");
-                    start_pointers[from] = SaturateCast<Index>::Do(transitions_table.size());
+                        throw Error("Transitions are not ordered by starting state! Starting state of transition ", transitions.size() + 1, " has already been visited.");
+                    start_pointers[from] = SaturateCast<Index>::Do(transitions.size());
                     previous_state = from;
                 }
-                transitions_table.emplace_back();
+                transitions.emplace_back();
 
                 if (to != std::numeric_limits<Index>::max())
                 {
@@ -240,80 +241,72 @@ public:
                     if (fd_table.IsIt(input.c_str()))
                     {
                         // save these special cases for later
-                        transitions_table.back().input_symbol = std::numeric_limits<Index>::max();
-                        transitions_table.back().output_symbol = flag_hash[output];
+                        transitions.back().input = std::numeric_limits<Index>::max();
+                        transitions.back().output = flag_hash[output];
                     }
                     else
                     {
-                        transitions_table.back().input_symbol = alphabet_hash[input];
-                        transitions_table.back().output_symbol = alphabet_hash[output];
+                        transitions.back().input = alphabet_hash[input];
+                        transitions.back().output = alphabet_hash[output];
                     }
                 }
-                transitions_table.back().from = from;
-                transitions_table.back().to = to;
-                transitions_table.back().weight = weight;
+                transitions.back().from = from;
+                transitions.back().to = to;
+                transitions.back().weight = weight;
             }
-            n_states = start_pointers.size();
-            flag_symbol = SaturateCast<Index>::Do(alphabet_hash.size());
-            for (const auto& flags : flag_hash)
-            {
-                fd_table.Memorize(flags.first.c_str(), alphabet_hash[flags.first]);
-            }
-            CompileAlphabet(alphabet_hash);
         }
+
+        n_states = start_pointers.size();
+        flag_symbol = SaturateCast<Index>::Do(alphabet_hash.size());
+        for (const auto& flags : flag_hash)
+        {
+            fd_table.Memorize(flags.first.c_str(), alphabet_hash[flags.first]);
+        }
+        CompileAlphabet(alphabet_hash);
         fd_table.CalculateOffsets();
 
-        // write the binary format
-        /* TODO sort outgoing transitions
-           - finish (maximum)  ______ end-of-tape must be reached  \
-           - empty                  \                               |does not advance input tape
-           - flag diacritic       __/ end-of-tape can be reached __/
-           - identity || unknown    \                              \
-                                     |end-of-tape cannot be reached |advance input tape by 1
-           - others (binary-search)_/                            __/
-        */
         Index i, j;
-        for (i = 0, j = 0; i < transitions_table.size(); i = j)
+        for (i = 0, j = 0; i < transitions.size(); i = j)
         {
-            for (; j < transitions_table.size() && transitions_table[j].from == transitions_table[i].from; ++j)
+            for (; j < transitions.size() && transitions[j].from == transitions[i].from; ++j)
             {
-                auto& t = transitions_table[j];
+                auto& t = transitions[j];
                 if (t.to != std::numeric_limits<Index>::max())
                 {   // non-final state
                     auto it = start_pointers.find(t.to);
                     if (it != start_pointers.end())
                         t.to = start_pointers[t.to];
                     else // dangling edge
-                        t.to = (Index)transitions_table.size();
+                        t.to = (Index)transitions.size();
                 }
 
-                if (t.input_symbol >= flag_symbol)
+                if (t.input >= flag_symbol)
                 {
                     for (const auto& flag : flag_hash)
                     {
                         // re-find which string is it exactly
-                        if (flag.second == t.output_symbol)
+                        if (flag.second == t.output)
                         {
-                            t.input_symbol = alphabet_hash[flag.first];
+                            t.input = alphabet_hash[flag.first];
                             break;
                         }
                     }
-                    fd_table.Compile(t.input_symbol, t.output_symbol);
+                    fd_table.Compile(t.input, t.output);
                 }
             }
-            // std::sort(transitions_table.begin() + i, transitions_table.begin() + j);
+            std::sort(transitions.begin() + i, transitions.begin() + j);
         }
     }
     bool Write(FILE* f, CharType field_separator = '\t')const
     {
         //    std::vector<Index> sorted_pointers;
-        //    const RecordIterator<const Index, const CharType> end(transitions_table.data() + transitions_table.size());
+        //    const RecordIterator<const Index, const CharType> end(transitions.data() + transitions.size());
         //    {
         //        std::unordered_set<Index> pointers;
         //        pointers.reserve(n_states + 1);
         //        pointers.emplace(start_state[0]);
         //        pointers.emplace(start_state[1]);
-        //        for (RecordIterator<const Index, const CharType> i(transitions_table.data()); i < end; ++i)
+        //        for (RecordIterator<const Index, const CharType> i(transitions.data()); i < end; ++i)
         //        {
         //            if (i.GetTo() != std::numeric_limits<Index>::max())
         //            {
@@ -321,7 +314,7 @@ public:
         //                pointers.emplace(i.GetTo());
         //            }
         //        }
-        //        pointers.emplace((Index)transitions_table.size());
+        //        pointers.emplace((Index)transitions.size());
         //        sorted_pointers.assign(pointers.begin(), pointers.end());
         //    }
         //    std::sort(sorted_pointers.begin(), sorted_pointers.end());
@@ -329,9 +322,9 @@ public:
         //    Index from_state = 0, to_state;
         //    const CharType newline = '\n';
         // 
-        //    for (RecordIterator<const Index, const CharType> i(transitions_table.data()); i < end; ++i)
+        //    for (RecordIterator<const Index, const CharType> i(transitions.data()); i < end; ++i)
         //    {
-        //        while (sorted_pointers[from_state + 1] <= (const Index*)i - transitions_table.data())
+        //        while (sorted_pointers[from_state + 1] <= (const Index*)i - transitions.data())
         //        {
         //            ++from_state;
         //        }
@@ -394,7 +387,7 @@ public:
             return false;
 
         // transitions themselves
-        return WriteBinaryVector(f, transitions_table);
+        return WriteBinaryVector(f, transitions);
     }
     bool ReadBinary(FILE* f)
     {
@@ -429,14 +422,19 @@ public:
         if (fread(&flag_symbol, sizeof(Index), 1, f) != 1)
             return false;
 
-        return ReadBinaryVector(f, transitions_table);
+        return ReadBinaryVector(f, transitions);
     }
 
     //! including to finishing from a final state
-    size_t GetNumberOfTransitions()const { return transitions_table.size(); }
+    size_t GetNumberOfTransitions()const { return transitions.size(); }
     //! including start state
     size_t GetNumberOfStates()const { return n_states; }
-    size_t GetAllocatedMemory()const{ return sizeof(Transition)*transitions_table.size(); }
+    size_t GetAllocatedMemory()const
+    {
+        return sizeof(Transition) * transitions.size() +
+            sizeof(Index) * alphabet.size() +
+            sizeof(CharType) * raw_alphabet.size();
+    }
 
     size_t max_results;
     size_t max_depth;
@@ -463,9 +461,6 @@ public:
             if (!found)
                 input_tape.emplace_back(unknown_symbol);
         }
-        // in theory, the requesive calls keep these consistent
-        //path.clear();
-        //input_tape_pos = 0;
         n_results = 0;
         myclock.Tick();
         flag_failed = false;
@@ -498,67 +493,98 @@ private:
             }
         }
         const auto flag_state = path.empty() ? FlagState() : path.back().GetFlag();
-        for (const auto state = transitions_table[i].from; i < transitions_table.size() && transitions_table[i].from == state; ++i)
-        {   // try outgoing edges
-            const Transition& t = transitions_table[i];
-            if (t.to == std::numeric_limits<Index>::max())
-            {   //final state
-                if (input_tape_pos == input_tape.size() && (strategy != NEGATIVE || flag_failed))
-                {   // that's a result
-                    if (check_limits)
-                        ++n_results;
-                    path.emplace_back(GetSymbolStr(empty_symbol), GetSymbolStr(empty_symbol), i, state, t.weight, flag_state);
-                    resulthandler(path);
-                    path.pop_back();
-                }
-            }
-            else if (t.input_symbol == empty_symbol)
-            {
-                path.emplace_back(GetSymbolStr(empty_symbol), GetSymbolStr(t.output_symbol), i, state, t.weight, flag_state);
-                lookup<strategy, check_limits>(t.to);
+        const auto state = transitions[i].from;
+        if (input_tape_pos == input_tape.size() && (strategy != NEGATIVE || flag_failed))
+        {   // try final transitions
+            for (; i < transitions.size() &&
+                transitions[i].from == state &&
+                transitions[i].to == std::numeric_limits<Index>::max();
+                ++i)
+            {   //final transition
+                if (check_limits)
+                    ++n_results;
+                path.emplace_back(GetSymbolStr(empty_symbol), GetSymbolStr(empty_symbol), i, state, transitions[i].weight, flag_state);
+                resulthandler(path);
                 path.pop_back();
             }
-            else if (t.input_symbol >= flag_symbol)
+        }
+        else
+        {   // skip final transitions
+            // TODO logarithmic ?
+            while (i < transitions.size() &&
+                transitions[i].from == state &&
+                transitions[i].to == std::numeric_limits<Index>::max())
             {
-                if (strategy == IGNORE)
-                {   // go with it, no matter what
-                    path.emplace_back(GetSymbolStr(t.input_symbol), GetSymbolStr(t.input_symbol), i, state, t.weight, flag_state);
-                    lookup<strategy, check_limits>(t.to);
-                    path.pop_back();
-                }
-                else
+                ++i;
+            }
+        }
+        // try epsilon transitions
+        for (; i < transitions.size() &&
+            transitions[i].from == state &&
+            transitions[i].input == empty_symbol;
+            ++i)
+        {
+            path.emplace_back(GetSymbolStr(empty_symbol), GetSymbolStr(transitions[i].output), i, state, transitions[i].weight, flag_state);
+            lookup<strategy, check_limits>(transitions[i].to);
+            path.pop_back();
+        }
+        // try diacritic flags
+        for (; i < transitions.size() &&
+            transitions[i].from == state &&
+            transitions[i].input >= flag_symbol;
+            ++i)
+        {
+            if (strategy == IGNORE)
+            {   // go with it, no matter what
+                path.emplace_back(GetSymbolStr(transitions[i].input), GetSymbolStr(transitions[i].input), i, state, transitions[i].weight, flag_state);
+                lookup<strategy, check_limits>(transitions[i].to);
+                path.pop_back();
+            }
+            else
+            {
+                auto new_flag_state = flag_state;
+                if (fd_table.Apply(transitions[i].output, new_flag_state))
                 {
-                    auto new_flag_state = flag_state;
-                    if (fd_table.Apply(t.output_symbol, new_flag_state))
-                    {
-                        path.emplace_back(GetSymbolStr(t.input_symbol), GetSymbolStr(t.input_symbol), i, state, t.weight, new_flag_state);
-                        lookup<strategy, check_limits>(t.to);
-                        path.pop_back();
-                    }
-                    else if (strategy == NEGATIVE)
-                    {
-                        const bool previous_fail = flag_failed;
-                        flag_failed = true;
-                        path.emplace_back(GetSymbolStr(t.input_symbol), GetSymbolStr(t.input_symbol), i, state, t.weight, new_flag_state);
-                        lookup<strategy, check_limits>(t.to);
-                        path.pop_back();
-                        flag_failed = previous_fail;
-                    }
+                    path.emplace_back(GetSymbolStr(transitions[i].input), GetSymbolStr(transitions[i].input), i, state, transitions[i].weight, new_flag_state);
+                    lookup<strategy, check_limits>(transitions[i].to);
+                    path.pop_back();
+                }
+                else if (strategy == NEGATIVE)
+                {
+                    const bool previous_fail = flag_failed;
+                    flag_failed = true;
+                    path.emplace_back(GetSymbolStr(transitions[i].input), GetSymbolStr(transitions[i].input), i, state, transitions[i].weight, new_flag_state);
+                    lookup<strategy, check_limits>(transitions[i].to);
+                    path.pop_back();
+                    flag_failed = previous_fail;
                 }
             }
-            else if (input_tape_pos < input_tape.size() && (t.input_symbol == identity_symbol || t.input_symbol == unknown_symbol))
+        }
+        // try only if there is any symbol left to read
+        if (input_tape_pos < input_tape.size())
+        {   // normal transitions
+            // TODO binary-search
+            for (; i < transitions.size() &&
+                transitions[i].from == state &&
+                transitions[i].input != unknown_symbol &&
+                transitions[i].input != identity_symbol;
+                ++i)
             {
-                path.emplace_back(GetSymbolStr(t.input_symbol), GetSymbolStr(t.output_symbol), i, state, t.weight, flag_state);
-                ++input_tape_pos;
-                lookup<strategy, check_limits>(t.to);
-                --input_tape_pos;
-                path.pop_back();
+                if (input_tape[input_tape_pos] == transitions[i].input)
+                {   // a lead to follow
+                    path.emplace_back(GetSymbolStr(transitions[i].input), GetSymbolStr(transitions[i].output), i, state, transitions[i].weight, flag_state);
+                    ++input_tape_pos;
+                    lookup<strategy, check_limits>(transitions[i].to);
+                    --input_tape_pos;
+                    path.pop_back();
+                }
             }
-            else if (input_tape_pos < input_tape.size() && input_tape[input_tape_pos] == t.input_symbol)
-            {   // a lead to follow
-                path.emplace_back(GetSymbolStr(t.input_symbol), GetSymbolStr(t.output_symbol), i, state, t.weight, flag_state);
+            // id/unk transitions, always fallow
+            for (; i < transitions.size() && transitions[i].from == state; ++i)
+            {
+                path.emplace_back(GetSymbolStr(transitions[i].input), GetSymbolStr(transitions[i].output), i, state, transitions[i].weight, flag_state);
                 ++input_tape_pos;
-                lookup<strategy, check_limits>(t.to);
+                lookup<strategy, check_limits>(transitions[i].to);
                 --input_tape_pos;
                 path.pop_back();
             }
