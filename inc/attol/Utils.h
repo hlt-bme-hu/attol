@@ -170,6 +170,40 @@ public:
     }
 };
 
+// https://stackoverflow.com/questions/25123458/is-trivially-copyable-is-not-a-member-of-std/31798726#31798726
+// workaround missing "is_trivially_copyable" in g++ < 5.0
+#if __GNUG__ && __GNUC__ < 5
+#define IS_TRIVIALLY_COPYABLE(T) __has_trivial_copy(T)
+#else
+#define IS_TRIVIALLY_COPYABLE(T) std::is_trivially_copyable<T>::value
+#endif
+
+template<class Type>
+bool ReadBinaryVector(FILE* f, std::vector<Type>& v)
+{
+    static_assert(IS_TRIVIALLY_COPYABLE(Type), "");
+    v.clear();
+    size_t s;
+    if (fread(&s, sizeof(s), 1, f) != 1)
+        return false;
+    v.resize(s);
+    if (fread(v.data(), sizeof(Type), v.size(), f) != v.size())
+        return false;
+    return true;
+}
+
+template<class Type>
+bool WriteBinaryVector(FILE* f, const std::vector<Type>& v)
+{
+    static_assert(IS_TRIVIALLY_COPYABLE(Type), "");
+    const size_t s = v.size();
+    if (fwrite(&s, sizeof(s), 1, f) != 1)
+        return false;
+    if (fwrite(v.data(), sizeof(Type), v.size(), f) != v.size())
+        return false;
+    return true;
+}
+
 template<class StorageType>
 struct SignedBitfield
 {

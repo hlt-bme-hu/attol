@@ -6,8 +6,6 @@
 #include <array>
 #include <string>
 
-#include "attol/Utils.h"
-
 namespace attol {
 
 enum Encoding
@@ -162,10 +160,10 @@ std::basic_string<TargetType> Convert(const SourceType* s)
 }
 
 template<class CharType, class ResultType>
-void ReadFloat(const CharType* s, ResultType& x)
+bool ReadFloat(const CharType* s, ResultType& x)
 {
     const std::string ascii = Convert<char>(s);
-    std::sscanf(ascii.c_str(), std::is_same<ResultType, double>::value ? "%lf" : "%f", &x);
+    return 1 == std::sscanf(ascii.c_str(), std::is_same<ResultType, double>::value ? "%lf" : "%f", &x);
 }
 
 template<class CharType, class FloatType>
@@ -174,6 +172,16 @@ std::basic_string<CharType> WriteFloat(FloatType&& x)
     static char result[32];
     std::snprintf(result, 32, "%g", x);
     return Convert<CharType>(result);
+}
+
+template<class CharType, class Index>
+bool ReadIndex(const CharType* s, Index& i)
+{
+    const std::string ascii = Convert<char>(s);
+    return std::sscanf(ascii.c_str(), 
+        std::is_same<Index, unsigned int>::value ? "%u" : (
+        std::is_same<Index, unsigned long>::value ? "%lu" : "llu"
+        ), &i);
 }
 
 template<class CharType, class Index>

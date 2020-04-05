@@ -16,6 +16,7 @@ template<class CharType = char, class FlagStorageType = int>
 class FlagDiacritics
 {
 public:
+    FlagDiacritics(): flag_symbol_min(std::numeric_limits<decltype(flag_symbol_min)>::max()){}
     // does the flag state have to be larger than 64bit?
     // typedef typename std::remove_extent<FlagStorageType>::type ValueType;
     static_assert(std::is_integral<CharType>::value, "atto::FlagDiacritics requires an integral type as first template parameter!");
@@ -26,7 +27,14 @@ public:
     typedef CharType* cstr;
     typedef const CharType* ccstr;
     typedef FlagStorageType StorageType;
-
+    typedef typename std::make_unsigned<StorageType>::type Index;
+    struct Operation
+    {
+        char type;
+        unsigned char feature;
+        unsigned char value;
+        Operation(): type('\0'), feature(0x00), value(0x00) {}
+    };
     typedef SignedBitfield<StorageType> State;
 
     std::vector<StorageType> GetValues(const State& s)const
@@ -41,58 +49,40 @@ public:
 
     static bool IsIt(ccstr input)
     {
-        // even if for empty string, the first element should be a '\0'
+        // returns false for empty string because input[0] == '\0' != '@'
         return (input[0] == '@' && 
             (input[1] == 'P' || input[1] == 'N' || input[1] == 'D' || input[1] == 'R' || input[1] == 'C' || input[1] == 'U') &&
             input[2] == '.' &&
             input[3] != 0);
     }
-    static std::pair<string, string> Parse(ccstr flags)
-    {
-        std::pair<string, string> p;
-        auto& feature = p.first;
-        auto& value= p.second;
-        feature = flags + 3;
 
-        // @
-        feature.pop_back();
-
-        const size_t i = feature.find(CharType('.'));
-        if (i != string::npos)
-        {
-            value = feature.substr(i + 1);
-            feature = feature.substr(0, i);
-        }
-        return p;
-    }
-
-    void Read(ccstr flags)
+    void Memorize(ccstr flags, Index flag_id)
     {
         const auto p = Parse(flags);
         if (p.second.empty())
             flag_map[p.first];
         else
             flag_map[p.first].emplace(p.second);
+        op_map[flag_id].assign(flags);
+        flag_symbol_min = std::min(flag_symbol_min, flag_id);
     }
-    // replaces text encoded flag diacritic with binary optimized format
-    void Compile(cstr flags)const
+    template<class Type>
+    void Compile(Type flag_id, Type& output)const
     {
-        const auto p = Parse(flags);
-        const auto b = GetFeatureValue(p.first.c_str(), p.second.c_str());
-        flags[3] = b.first;
-        flags[4] = b.second;
+        static_assert(sizeof(Operation) <= sizeof(Type), "");
+        reinterpret_cast<Operation&>(output) = operations[flag_id - flag_symbol_min];
     }
 
     // if false, then state is not modified,
     // if true, then operation is applied to the state 
-    bool Apply(ccstr flags, State& state)const
+    bool Apply(const Index& id, State& state)const
     {
-        const UCharType feature = flags[3];
-        const auto value = (StorageType)(flags[4]);
-        const unsigned char bit_start = offsets[feature - 1];
-        const unsigned char bit_end = offsets[feature];
+        const auto& op = reinterpret_cast<const Operation&>(id);
+        const unsigned char bit_start = offsets[op.feature - 1];
+        const unsigned char bit_end = offsets[op.feature];
         const auto current_value = state.Get(bit_start, bit_end);
-        switch (flags[1])
+        const auto value = (StorageType)op.value;
+        switch (op.type)
         {
         case 'P': // positive set
             state.Set(bit_start, bit_end, value);
@@ -137,13 +127,81 @@ public:
         }
         throw; // for the compiler's peace of mind
     }
-
-    typedef typename std::make_unsigned<CharType>::type UCharType;
-    std::pair<UCharType, UCharType> GetFeatureValue(ccstr feature, ccstr value)const
+    void CalculateOffsets()
     {
-        std::pair<UCharType, UCharType> p;
-        p.first = 1;
-        p.second = 0;
+        offsets.clear();
+        unsigned char bits = 0;
+        if (flag_map.size() > std::numeric_limits<unsigned char>::max())
+        {
+            throw Error("There are ", flag_map.size(), " flag diacritic features, "
+                "which is more than what a single input character can hold!");
+        }
+        for (const auto& flag : flag_map)
+        {
+            const unsigned char required_flag_bits = IntLog2<unsigned char, size_t>(2 * (flag.second.size() + 1));
+            offsets.emplace_back(bits);
+            bits += required_flag_bits;
+        }
+        if (bits > sizeof(StorageType) * CHAR_BIT)
+            throw Error("Storing the state of the flag diacritics requires ", bits,
+                " bits, but FlagDiacritics::State is only ", sizeof(StorageType) * CHAR_BIT, " bits wide!");
+        offsets.emplace_back(bits);
+
+        operations.clear();
+        operations.resize(op_map.size());
+        for (const auto& op : op_map)
+        {
+            Operation& newop = operations[op.first - flag_symbol_min];
+            newop.type = (char)(op.second[1]);
+            const auto p = Parse(op.second.c_str());
+            const auto b = GetFeatureValue(p.first.c_str(), p.second.c_str());
+            newop.feature = b.first;
+            newop.value = b.second;
+        }
+    }
+    bool Write(FILE* f)const
+    {
+        if (fwrite(&flag_symbol_min, sizeof(flag_symbol_min), 1, f) != 1)
+            return false;
+        if (!WriteBinaryVector(f, offsets))
+            return false;
+        if (!WriteBinaryVector(f, operations))
+            return false;
+        return true;
+    }
+    bool Read(FILE* f)
+    {
+        if (fread(&flag_symbol_min, sizeof(flag_symbol_min), 1, f) != 1)
+            return false;
+        if (!ReadBinaryVector(f, offsets))
+            return false;
+        if (!ReadBinaryVector(f, operations))
+            return false;
+        return true;
+    }
+private:
+    static std::pair<string, string> Parse(ccstr flags)
+    {
+        std::pair<string, string> p;
+        auto& feature = p.first;
+        auto& value = p.second;
+        feature = flags + 3;
+
+        // @
+        feature.pop_back();
+
+        const size_t i = feature.find(CharType('.'));
+        if (i != string::npos)
+        {
+            value = feature.substr(i + 1);
+            feature = feature.substr(0, i);
+        }
+        return p;
+    }
+    // typedef typename std::make_unsigned<CharType>::type UCharType;
+    std::pair<unsigned char, unsigned char> GetFeatureValue(ccstr feature, ccstr value)const
+    {
+        std::pair<unsigned char, unsigned char> p((unsigned char)1, (unsigned char)0);
         for (auto& f : flag_map)
         {
             if (f.first == feature)
@@ -169,30 +227,11 @@ public:
         }
         throw Error("Oops!");
     }
-    void CalculateOffsets()
-    {
-        offsets.clear();
-        unsigned char bits = 0;
-        if (flag_map.size() > std::numeric_limits<UCharType>::max())
-        {
-            throw Error("There are ", flag_map.size(), " flag diacritic features, "
-                "which is more than what a single input character can hold!");
-        }
-        for (const auto& flag : flag_map)
-        {
-            const unsigned char required_flag_bits = IntLog2<unsigned char, size_t>(2 * (flag.second.size() + 1));
-            offsets.emplace_back(bits);
-            bits += required_flag_bits;
-        }
-        if (bits > sizeof(StorageType) * CHAR_BIT)
-            throw Error("Storing the state of the flag diacritics requires ", bits,
-                " bits, but FlagDiacritics::State is only ", sizeof(StorageType) * CHAR_BIT, " bits wide!");
-        offsets.emplace_back(bits);
-    }
-    std::vector<unsigned char> GetOffsets()const { return offsets; }
-    void SetOffsets(const std::vector<unsigned char>& o){ offsets = o; }
 private:
     std::unordered_map<string, std::unordered_set<string>> flag_map;
+    std::unordered_map<Index, string> op_map;
+    typename std::make_unsigned<StorageType>::type flag_symbol_min;
+    std::vector<Operation> operations;
     std::vector<unsigned char> offsets;
 };
 
