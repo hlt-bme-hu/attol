@@ -153,10 +153,12 @@ private:
     void CompileAlphabet(Alphabet& alphabet_hash)
     {
         alphabet.resize(alphabet_hash.size());
+        reverse_alphabet_map.clear();
         raw_alphabet.clear();
         raw_alphabet.reserve(2 * alphabet_hash.size());
         for (const auto& symbol : alphabet_hash)
         {
+            reverse_alphabet_map[symbol.first] = symbol.second;
             alphabet[symbol.second] = (Index)raw_alphabet.size();
             raw_alphabet.insert(raw_alphabet.end(), symbol.first.begin(), symbol.first.end());
             raw_alphabet.emplace_back((CharType)0);
@@ -168,6 +170,7 @@ private:
     }
     std::vector<CharType> raw_alphabet;
     std::vector<Index> alphabet;
+    std::unordered_map<string, Index> reverse_alphabet_map;
     std::vector<Transition> transitions;
     size_t n_states;
     FlagDiacriticsType fd_table;
@@ -422,6 +425,11 @@ public:
         if (fread(&flag_symbol, sizeof(Index), 1, f) != 1)
             return false;
 
+        reverse_alphabet_map.clear();
+        for (Index i = 0; i < alphabet.size(); ++i)
+        {
+            reverse_alphabet_map[GetSymbolStr(i)] = i;
+        }
         return ReadBinaryVector(f, transitions);
     }
 
@@ -444,23 +452,7 @@ public:
     template<FlagStrategy strategy = FlagStrategy::OBEY, bool check_limits = false>
     void Lookup(const CharType* s)
     {
-        input_tape.clear();
-        for (; *s; StepNextCharacter<enc>(s))
-        {
-            const string letter(s, GetNextCharacter<enc>(s));
-            bool found = false;
-            for (Index i = 0; i < alphabet.size(); ++i)
-            {
-                if (letter == GetSymbolStr(i))
-                {
-                    input_tape.emplace_back(i);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                input_tape.emplace_back(unknown_symbol);
-        }
+        Segment(s, input_tape);
         n_results = 0;
         myclock.Tick();
         flag_failed = false;
@@ -480,6 +472,19 @@ public:
         };
     }
 private:
+    void Segment(const CharType* s, std::vector<Index>& inputtape)const
+    {
+        inputtape.clear();
+        for (; *s; StepNextCharacter<enc>(s))
+        {
+            const string letter(s, GetNextCharacter<enc>(s));
+            const auto it = reverse_alphabet_map.find(letter);
+            if (it != reverse_alphabet_map.end())
+                inputtape.emplace_back(it->second);
+            else
+                inputtape.emplace_back(unknown_symbol);
+        }
+    }
     template<FlagStrategy strategy, bool check_limits>
     void lookup(Index i)
     {
