@@ -101,6 +101,7 @@ try{
             word.push_back(c);
         }
         (t.*lookup)(word.data());
+        fputc('\n', stdout);
     }
     return 0;
 }

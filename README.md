@@ -122,45 +122,46 @@ All you need is [cmake](https://cmake.org/) (>=3.1) and a c++11 compliant compil
     goose+N+PL      18.4541
 
 ## Performance
-This implementation is several times faster than [hfst-lookup](https://github.com/hfst/hfst/wiki/HfstLookUp) with `hfstol` format.
+This implementation is faster than [hfst-optimized-lookup](https://github.com/hfst/hfst/wiki/HfstOptimizedLookup).
 Also the peak memory usage is about half of `hfst`, or even less, depending on the transducer format.
 
-* Measured against `hfst-lookup 0.6` with different `hfstlib` versions (marked in parenthesis) on various CPUs.
-* Only peak memory usage is reported
-* the output lines is just the result of `wc -l`
-* there is one notable difference between the output of `hfst` and `attol`
-  * `hfst` takes a union over the possible analyses, but only considers the output tape
-  * `attol` considers two analyses different if their transitions differ, however the output tape may be the same.
-  * this is the case for example with english _"kids"_.
-* In the tests, the transducers were loaded in a text (AT&T) format.
-  * converting to attol's own binary format first makes loading time instantaneous and also reduces peak memory usage.
-  * although, sustained memory usage is the same for both formats.
+* Measured against `hfst-optimized-lookup 1.2` on various CPUs.
+  * Pentium measurements were on Windows 10
+  * other on Ubuntu 16 or 18
+* Only peak memory usage is reported (if available)
+* The transducers were converted into optimized (binary) format beforehand. This eliminates loading time as much as possible.
+  * In case of hfst, this means hfstol format
+  * For attol, a custom binary format is used.
 
 ### English
 * data: lowercase words of [UMBC](https://ebiquity.umbc.edu/resource/html/id/351), first 1M most frequent types.
 * morphology: https://sourceforge.net/projects/hfst/files/resources/morphological-transducers/
 
-| tool        | CPU (single thread) | output lines | time (sec)  | memory (KiB) |
-| ----------- | -----------         | -----:        |-----:        |-----:         |
-| hfst (3.12.2) |Intel i7-4790K 4.00GHz   | 2258781 | 35.90 | 216928 |
-| attol       |Intel i7-4790K 4.00GHz   | 2258906 | 10.14 | 135648 |
-| hfst (3.12.0) |Intel Xeon E5520 2.27GHz | 2258781 | 68.49 | 221300 |
-| attol       |Intel Xeon E5520 2.27GHz | 2258906 | 25.77 | 122684 |
-| hfst (3.13.0) |Intel Pentium N4200 ~2GHz| 2258781 | 120.11| 213860 |
-| attol       |Intel Pentium N4200 ~2GHz| 2258906 | 38.06 | 130044 |
+| tool | CPU (single thread) | time (sec)| memory (KiB) |
+| -----| -----------         | -----:    |-----:        |
+|hfst |Pentium N4200|36.4| |
+|attol|Pentium N4200|18.45| |
+|hfst |Celeron J1800|23.81|159124 |
+|attol|Celeron J1800|19.65|29112 |
+|hfst |Xeon E5520   |12.54|159552 |
+|attol|Xeon E5520   |11.77|29488 |
+|hfst |Core i7-4790K|5.41|164980 |
+|attol|Core i7-4790K|4.93|29720 |
 
 ### Hungarian
 * data: lowercase words of [MNSZ2](http://clara.nytud.hu/mnsz2-dev/), first 1M most frequent types.
 * morphology: https://github.com/dlt-rilmta/emMorph
 
-| tool        | CPU (single thread) | output lines | time (sec)  | memory (KiB) |
-| ----------- | -----------         | -----:        |-----:        |-----:         |
-| hfst (3.12.2) |Intel i7-4790K 4.00GHz   | 2731214 | 60.17 | 303924 |
-| attol       |Intel i7-4790K 4.00GHz   | 2731278 | 15.13 | 149792 |
-| hfst (3.12.0) |Intel Xeon E5520 2.27GHz | 2731214 | 117.50| 307564 |
-| attol       |Intel Xeon E5520 2.27GHz | 2731278 | 33.50 | 129520 |
-| hfst (3.13.0) |Intel Pentium N4200 ~2GHz| 2731214 | 175.76| 260040 |
-| attol       |Intel Pentium N4200 ~2GHz| 2731278 | 57.28 | 130044 |
+| tool | CPU (single thread) | time (sec)| memory (KiB) |
+| -----| -----------         | -----:    |-----:        |
+|hfst|Pentium N4200|63.49||
+|attol|Pentium N4200|23.75||
+|hfst|Celeron J1800|39.58|262252|
+|attol|Celeron J1800|21.45|39116|
+|hfst|Xeon E5520|18.71|262364|
+|attol|Xeon E5520|12.22|39192|
+|hfst|Core i7-4790K|9.61|267648|
+|attol|Core i7-4790K|5.58|39592|
 
 ## Encoding
 The tool is able to operate in the following modes:
